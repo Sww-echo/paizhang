@@ -12,6 +12,8 @@ flutter run \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 ```
 
+Web 端的 Drift 本地缓存依赖 `web/sqlite3.wasm` 和 `web/drift_worker.js`，这两个运行时文件已随项目提交。
+
 数据库迁移位于 `supabase/migrations/20260930120000_initial_schema.sql`。当前会话需要绑定 Supabase 项目或安装 Supabase CLI 后才能执行远程迁移。
 
 ## Getting Started

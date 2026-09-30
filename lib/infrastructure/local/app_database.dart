@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart';
 
 part 'app_database.g.dart';
 
@@ -112,7 +113,18 @@ class SyncQueueEntries extends Table {
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
-    : super(executor ?? driftDatabase(name: 'paizhang'));
+    : super(
+        executor ??
+            driftDatabase(
+              name: 'paizhang',
+              web: kIsWeb
+                  ? DriftWebOptions(
+                      sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+                      driftWorker: Uri.parse('drift_worker.js'),
+                    )
+                  : null,
+            ),
+      );
 
   @override
   int get schemaVersion => 1;
