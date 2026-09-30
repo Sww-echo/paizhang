@@ -1,0 +1,30 @@
+{
+  "id": "paizhang-app",
+  "name": "paizhang-app",
+  "title": "构建牌账线下牌局记分结算应用",
+  "description": "实现一个带账号登录、房间邀请、多人实时记分和自动结算能力的线下牌局记账 App。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "sww",
+  "assignee": "sww",
+  "createdAt": "2026-09-30",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "platform": "mobile",
+    "scope": "mvp",
+    "product": "paizhang"
+  }
+}
