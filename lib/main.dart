@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 
+import 'application/app_services.dart';
 import 'infrastructure/backend/supabase_bootstrap.dart';
+import 'presentation/connected_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SupabaseBootstrap.initializeIfConfigured();
-  runApp(const PaizhangApp());
+  final supabaseConfigured = await SupabaseBootstrap.initializeIfConfigured();
+  final services = AppServices.create(supabaseConfigured: supabaseConfigured);
+  runApp(PaizhangApp(services: services.isConfigured ? services : null));
 }
 
 class PaizhangApp extends StatelessWidget {
-  const PaizhangApp({super.key});
+  const PaizhangApp({this.services, super.key});
+
+  final AppServices? services;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +52,9 @@ class PaizhangApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeShell(),
+      home: services == null
+          ? const HomeShell()
+          : AuthGate(services: services!),
     );
   }
 }

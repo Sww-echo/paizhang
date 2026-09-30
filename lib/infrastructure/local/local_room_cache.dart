@@ -108,6 +108,40 @@ class LocalRoomCache {
     });
   }
 
+  Future<void> saveRound(Round round) async {
+    final now = DateTime.now().toUtc();
+    await database.transaction(() async {
+      await database
+          .into(database.cachedRounds)
+          .insertOnConflictUpdate(
+            CachedRoundsCompanion.insert(
+              id: round.id,
+              sessionId: round.sessionId,
+              roundNumber: round.number,
+              createdBy: round.createdBy,
+              note: Value(round.note),
+              createdAt: round.createdAt.toUtc(),
+              deletedAt: Value(round.deletedAt?.toUtc()),
+              updatedAt: now,
+            ),
+          );
+      for (var index = 0; index < round.changes.length; index++) {
+        final change = round.changes[index];
+        await database
+            .into(database.cachedScoreChanges)
+            .insertOnConflictUpdate(
+              CachedScoreChangesCompanion.insert(
+                id: '${round.id}:$index',
+                roundId: round.id,
+                playerId: change.playerId,
+                value: change.value,
+                updatedAt: now,
+              ),
+            );
+      }
+    });
+  }
+
   Future<void> _saveRoomAndMembers(Room room, DateTime now) async {
     await database
         .into(database.cachedRooms)

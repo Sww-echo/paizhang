@@ -9,11 +9,13 @@ class RoomSyncCoordinator {
     required this.repository,
     required this.realtime,
     required this.cache,
+    this.onRefresh,
   });
 
   final SupabaseRoomRepository repository;
   final SupabaseSync realtime;
   final LocalRoomCache cache;
+  final Future<void> Function()? onRefresh;
 
   StreamSubscription<RemoteChange>? _subscription;
   String? _roomId;
@@ -41,6 +43,7 @@ class RoomSyncCoordinator {
       sessions: snapshot.sessions,
       rounds: snapshot.rounds,
     );
+    await onRefresh?.call();
   }
 
   Future<void> stop() async {

@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/models.dart';
 import '../local/app_database.dart';
+import '../local/sync_queue.dart';
 
 class RemoteInvite {
   const RemoteInvite({
@@ -37,6 +38,13 @@ class RemoteRoomSnapshot {
   final Room room;
   final List<GameSession> sessions;
   final List<Round> rounds;
+}
+
+class RoundWriteResult {
+  const RoundWriteResult({required this.round, required this.queued});
+
+  final Round round;
+  final bool queued;
 }
 
 class SupabaseRoomRepository {
@@ -249,6 +257,64 @@ class SupabaseRoomRepository {
     return _getRound(result as String);
   }
 
+  Future<RoundWriteResult> recordRoundWithQueue({
+    required SyncQueue queue,
+    required String sessionId,
+    required int roundNumber,
+    required List<ScoreChange> changes,
+    String? note,
+    String? roundId,
+    String? operationId,
+  }) async {
+    final resolvedRoundId = roundId ?? _randomUuid();
+    final resolvedOperationId = operationId ?? _randomUuid();
+    try {
+      final round = await recordRound(
+        sessionId: sessionId,
+        roundNumber: roundNumber,
+        changes: changes,
+        note: note,
+        roundId: resolvedRoundId,
+        operationId: resolvedOperationId,
+      );
+      return RoundWriteResult(round: round, queued: false);
+    } catch (error) {
+      if (!_isRetryableSyncError(error)) rethrow;
+      await queue.enqueue(
+        operationId: resolvedOperationId,
+        entityType: 'round',
+        entityId: resolvedRoundId,
+        operation: 'create',
+        payload: {
+          'round_id': resolvedRoundId,
+          'session_id': sessionId,
+          'round_number': roundNumber,
+          'note': note,
+          'changes': changes
+              .map(
+                (change) => {
+                  'player_id': change.playerId,
+                  'value': change.value,
+                },
+              )
+              .toList(),
+        },
+      );
+      return RoundWriteResult(
+        round: Round(
+          id: resolvedRoundId,
+          sessionId: sessionId,
+          number: roundNumber,
+          changes: List.unmodifiable(changes),
+          createdBy: _requireUserId(),
+          createdAt: DateTime.now(),
+          note: note,
+        ),
+        queued: true,
+      );
+    }
+  }
+
   Future<void> pushQueuedOperation(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payloadJson) as Map<String, dynamic>;
     if (entry.entityType != 'round' ||
@@ -396,4 +462,25 @@ class SupabaseRoomRepository {
   }
 
   String _hash(String value) => sha256.convert(utf8.encode(value)).toString();
+
+  String _randomUuid() {
+    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0'));
+    final value = hex.join();
+    return '${value.substring(0, 8)}-${value.substring(8, 12)}-'
+        '${value.substring(12, 16)}-${value.substring(16, 20)}-'
+        '${value.substring(20)}';
+  }
+
+  bool _isRetryableSyncError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('socket') ||
+        message.contains('timeout') ||
+        message.contains('network') ||
+        message.contains('connection') ||
+        message.contains('failed host lookup') ||
+        message.contains('fetch');
+  }
 }
