@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/models.dart';
+import '../local/app_database.dart';
 
 class RemoteInvite {
   const RemoteInvite({
@@ -221,38 +222,59 @@ class SupabaseRoomRepository {
     required int roundNumber,
     required List<ScoreChange> changes,
     String? note,
+    String? roundId,
+    String? operationId,
+    String operation = 'create',
   }) async {
-    final createdBy = _requireUserId();
-    final round = await client
-        .from('rounds')
-        .insert({
-          'session_id': sessionId,
-          'round_number': roundNumber,
-          'created_by': createdBy,
-          'note': note,
-        })
-        .select()
-        .single();
-    try {
-      await client
-          .from('score_changes')
-          .insert(
-            changes
-                .map(
-                  (change) => {
-                    'round_id': round['id'],
-                    'player_id': change.playerId,
-                    'created_by': createdBy,
-                    'value': change.value,
-                  },
-                )
-                .toList(),
-          );
-    } catch (_) {
-      await client.from('rounds').delete().eq('id', round['id']);
-      rethrow;
+    _requireUserId();
+    if (changes.isEmpty) {
+      throw const PaizhangException('至少需要一名玩家的分数变化');
     }
-    return _roundFromRow({...round, 'score_changes': changes});
+    final result = await client.rpc(
+      'upsert_round_with_scores',
+      params: {
+        'p_round_id': _uuidOrNull(roundId),
+        'p_session_id': sessionId,
+        'p_round_number': roundNumber,
+        'p_note': note,
+        'p_changes': changes
+            .map(
+              (change) => {'player_id': change.playerId, 'value': change.value},
+            )
+            .toList(),
+        'p_operation_id': operationId,
+        'p_operation': operation,
+      },
+    );
+    return _getRound(result as String);
+  }
+
+  Future<void> pushQueuedOperation(SyncQueueEntry entry) async {
+    final payload = jsonDecode(entry.payloadJson) as Map<String, dynamic>;
+    if (entry.entityType != 'round' ||
+        (entry.operation != 'create' && entry.operation != 'update')) {
+      throw StateError(
+        'Unsupported sync operation: ${entry.entityType}/${entry.operation}',
+      );
+    }
+    final changes = (payload['changes'] as List<dynamic>? ?? const []).map((
+      item,
+    ) {
+      final change = item as Map<String, dynamic>;
+      return ScoreChange(
+        playerId: change['player_id'] as String,
+        value: (change['value'] as num).toInt(),
+      );
+    }).toList();
+    await recordRound(
+      roundId: payload['round_id'] as String? ?? entry.entityId,
+      operationId: entry.operationId,
+      operation: entry.operation,
+      sessionId: payload['session_id'] as String,
+      roundNumber: (payload['round_number'] as num).toInt(),
+      note: payload['note'] as String?,
+      changes: changes,
+    );
   }
 
   Future<List<Round>> listRounds(String sessionId) async {
@@ -264,10 +286,29 @@ class SupabaseRoomRepository {
     return rows.map<Round>(_roundFromRow).toList();
   }
 
+  Future<Round> _getRound(String roundId) async {
+    final row = await client
+        .from('rounds')
+        .select('*, score_changes(*)')
+        .eq('id', roundId)
+        .single();
+    return _roundFromRow(row);
+  }
+
   String _requireUserId() {
     final userId = client.auth.currentUser?.id;
     if (userId == null) throw const PaizhangException('请先登录');
     return userId;
+  }
+
+  String? _uuidOrNull(String? value) {
+    if (value == null ||
+        !RegExp(
+          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+        ).hasMatch(value)) {
+      return null;
+    }
+    return value;
   }
 
   Room _roomFromRow(Map<String, dynamic> row) {

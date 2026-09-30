@@ -157,4 +157,54 @@ void main() {
     expect(pending.single.attemptCount, 1);
     expect(pending.single.lastError, contains('network'));
   });
+
+  test('同步队列失败后会暂停后续操作，保持提交顺序', () async {
+    final queue = SyncQueue(database);
+    await queue.enqueue(
+      operationId: 'op-failed',
+      entityType: 'round',
+      entityId: 'round-1',
+      operation: 'create',
+      payload: const {},
+    );
+    await queue.enqueue(
+      operationId: 'op-next',
+      entityType: 'round',
+      entityId: 'round-2',
+      operation: 'create',
+      payload: const {},
+    );
+
+    final pushed = <String>[];
+    await queue.flush((entry) async {
+      pushed.add(entry.operationId);
+      throw StateError('network');
+    });
+
+    expect(pushed, ['op-failed']);
+    expect(await database.pendingOperations(), hasLength(2));
+  });
+
+  test('回合同步队列可以保存可重放的分数负载', () async {
+    final queue = SyncQueue(database);
+    await queue.enqueue(
+      operationId: 'op-round-1',
+      entityType: 'round',
+      entityId: 'round-1',
+      operation: 'create',
+      payload: {
+        'round_id': 'round-1',
+        'session_id': 'session-1',
+        'round_number': 1,
+        'changes': [
+          {'player_id': 'user-1', 'value': 20},
+          {'player_id': 'user-2', 'value': -20},
+        ],
+      },
+    );
+
+    final entry = (await database.pendingOperations()).single;
+    expect(entry.payloadJson, contains('session-1'));
+    expect(entry.payloadJson, contains('user-2'));
+  });
 }

@@ -40,6 +40,7 @@ class SyncQueue {
           operationId: entry.operationId,
           error: error.toString(),
         );
+        break;
       }
     }
   }
