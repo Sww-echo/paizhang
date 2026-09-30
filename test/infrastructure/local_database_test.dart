@@ -41,6 +41,36 @@ void main() {
     expect(await cache.findMembers('room-1'), hasLength(1));
   });
 
+  test('刷新房间时会移除已经离开的旧成员缓存', () async {
+    final cache = LocalRoomCache(database);
+    final room = Room(
+      id: 'room-1',
+      name: '周末牌局',
+      ownerId: 'user-1',
+      gameType: '掼蛋',
+      scoringMode: ScoringMode.points,
+      createdAt: DateTime.utc(2026, 9, 30),
+      members: [
+        RoomMember(
+          userId: 'user-1',
+          role: RoomRole.owner,
+          joinedAt: DateTime.utc(2026, 9, 30),
+        ),
+        RoomMember(
+          userId: 'user-2',
+          role: RoomRole.member,
+          joinedAt: DateTime.utc(2026, 9, 30),
+        ),
+      ],
+    );
+
+    await cache.saveRoom(room);
+    await cache.saveRoom(room.copyWith(members: [room.members.first]));
+
+    expect(await cache.findMembers('room-1'), hasLength(1));
+    expect((await cache.findMembers('room-1')).single.userId, 'user-1');
+  });
+
   test('同步队列支持成功确认和失败重试计数', () async {
     final queue = SyncQueue(database);
     await queue.enqueue(

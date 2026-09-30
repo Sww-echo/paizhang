@@ -40,6 +40,9 @@ class LocalRoomCache {
               updatedAt: now,
             ),
           );
+      await (database.delete(
+        database.cachedRoomMembers,
+      )..where((member) => member.roomId.equals(room.id))).go();
       for (final member in room.members) {
         await database
             .into(database.cachedRoomMembers)

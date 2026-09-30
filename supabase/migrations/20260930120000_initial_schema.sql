@@ -357,9 +357,24 @@ create policy rounds_member_insert on public.rounds for insert to authenticated 
   created_by = auth.uid() and exists (select 1 from public.game_sessions s where s.id = session_id and public.can_input_room(s.room_id))
 );
 drop policy if exists rounds_member_update on public.rounds;
-create policy rounds_member_update on public.rounds for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
+create policy rounds_member_update on public.rounds for update to authenticated using (
+  created_by = auth.uid() and exists (
+    select 1 from public.game_sessions s
+    where s.id = session_id and public.can_input_room(s.room_id)
+  )
+) with check (
+  created_by = auth.uid() and exists (
+    select 1 from public.game_sessions s
+    where s.id = session_id and public.can_input_room(s.room_id)
+  )
+);
 drop policy if exists rounds_member_delete on public.rounds;
-create policy rounds_member_delete on public.rounds for delete to authenticated using (created_by = auth.uid());
+create policy rounds_member_delete on public.rounds for delete to authenticated using (
+  created_by = auth.uid() and exists (
+    select 1 from public.game_sessions s
+    where s.id = session_id and public.can_input_room(s.room_id)
+  )
+);
 drop policy if exists score_changes_member_select on public.score_changes;
 create policy score_changes_member_select on public.score_changes for select to authenticated using (
   exists (
@@ -371,13 +386,38 @@ drop policy if exists score_changes_member_insert on public.score_changes;
 create policy score_changes_member_insert on public.score_changes for insert to authenticated with check (
   created_by = auth.uid() and exists (
     select 1 from public.rounds r join public.game_sessions s on s.id = r.session_id
-    where r.id = round_id and public.can_input_room(s.room_id)
+    join public.room_members player on player.room_id = s.room_id and player.user_id = score_changes.player_id
+    where r.id = round_id and public.can_input_room(s.room_id) and player.left_at is null
   )
 );
 drop policy if exists score_changes_member_update on public.score_changes;
-create policy score_changes_member_update on public.score_changes for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
+create policy score_changes_member_update on public.score_changes for update to authenticated using (
+  created_by = auth.uid() and exists (
+    select 1
+    from public.rounds r
+    join public.game_sessions s on s.id = r.session_id
+    join public.room_members player on player.room_id = s.room_id and player.user_id = score_changes.player_id
+    where r.id = round_id and public.can_input_room(s.room_id) and player.left_at is null
+  )
+) with check (
+  created_by = auth.uid() and exists (
+    select 1
+    from public.rounds r
+    join public.game_sessions s on s.id = r.session_id
+    join public.room_members player on player.room_id = s.room_id and player.user_id = score_changes.player_id
+    where r.id = round_id and public.can_input_room(s.room_id) and player.left_at is null
+  )
+);
 drop policy if exists score_changes_member_delete on public.score_changes;
-create policy score_changes_member_delete on public.score_changes for delete to authenticated using (created_by = auth.uid());
+create policy score_changes_member_delete on public.score_changes for delete to authenticated using (
+  created_by = auth.uid() and exists (
+    select 1
+    from public.rounds r
+    join public.game_sessions s on s.id = r.session_id
+    join public.room_members player on player.room_id = s.room_id and player.user_id = score_changes.player_id
+    where r.id = round_id and public.can_input_room(s.room_id) and player.left_at is null
+  )
+);
 drop policy if exists sync_operations_self on public.sync_operations;
 create policy sync_operations_self on public.sync_operations for all to authenticated using (actor_id = auth.uid()) with check (
   actor_id = auth.uid()

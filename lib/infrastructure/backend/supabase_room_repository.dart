@@ -143,6 +143,101 @@ class SupabaseRoomRepository {
     return rows.map<Room>(_roomFromRow).toList();
   }
 
+  Future<GameSession> createGameSession({
+    required String roomId,
+    required String name,
+  }) async {
+    final row = await client
+        .from('game_sessions')
+        .insert({'room_id': roomId, 'name': name.trim(), 'status': 'draft'})
+        .select()
+        .single();
+    return _gameSessionFromRow(row);
+  }
+
+  Future<GameSession> startGameSession(String sessionId) async {
+    final row = await client
+        .from('game_sessions')
+        .update({
+          'status': 'active',
+          'started_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', sessionId)
+        .select()
+        .single();
+    return _gameSessionFromRow(row);
+  }
+
+  Future<GameSession> finishGameSession(String sessionId) async {
+    final row = await client
+        .from('game_sessions')
+        .update({
+          'status': 'finished',
+          'finished_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', sessionId)
+        .select()
+        .single();
+    return _gameSessionFromRow(row);
+  }
+
+  Future<List<GameSession>> listGameSessions(String roomId) async {
+    final rows = await client
+        .from('game_sessions')
+        .select()
+        .eq('room_id', roomId)
+        .order('updated_at', ascending: false);
+    return rows.map<GameSession>(_gameSessionFromRow).toList();
+  }
+
+  Future<Round> recordRound({
+    required String sessionId,
+    required int roundNumber,
+    required List<ScoreChange> changes,
+    String? note,
+  }) async {
+    final createdBy = _requireUserId();
+    final round = await client
+        .from('rounds')
+        .insert({
+          'session_id': sessionId,
+          'round_number': roundNumber,
+          'created_by': createdBy,
+          'note': note,
+        })
+        .select()
+        .single();
+    try {
+      await client
+          .from('score_changes')
+          .insert(
+            changes
+                .map(
+                  (change) => {
+                    'round_id': round['id'],
+                    'player_id': change.playerId,
+                    'created_by': createdBy,
+                    'value': change.value,
+                  },
+                )
+                .toList(),
+          );
+    } catch (_) {
+      await client.from('rounds').delete().eq('id', round['id']);
+      rethrow;
+    }
+    return _roundFromRow({...round, 'score_changes': changes});
+  }
+
+  Future<List<Round>> listRounds(String sessionId) async {
+    final rows = await client
+        .from('rounds')
+        .select('*, score_changes(*)')
+        .eq('session_id', sessionId)
+        .order('round_number');
+    return rows.map<Round>(_roundFromRow).toList();
+  }
+
   String _requireUserId() {
     final userId = client.auth.currentUser?.id;
     if (userId == null) throw const PaizhangException('请先登录');
@@ -177,6 +272,46 @@ class SupabaseRoomRepository {
       ),
       createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
       members: List.unmodifiable(members),
+    );
+  }
+
+  GameSession _gameSessionFromRow(Map<String, dynamic> row) {
+    return GameSession(
+      id: row['id'] as String,
+      roomId: row['room_id'] as String,
+      name: row['name'] as String,
+      status: GameSessionStatus.values.byName(row['status'] as String),
+      createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
+      startedAt: row['started_at'] == null
+          ? null
+          : DateTime.parse(row['started_at'] as String).toLocal(),
+      finishedAt: row['finished_at'] == null
+          ? null
+          : DateTime.parse(row['finished_at'] as String).toLocal(),
+    );
+  }
+
+  Round _roundFromRow(Map<String, dynamic> row) {
+    final rawChanges = row['score_changes'] as List<dynamic>? ?? const [];
+    final changes = rawChanges.map((item) {
+      if (item is ScoreChange) return item;
+      final change = item as Map<String, dynamic>;
+      return ScoreChange(
+        playerId: change['player_id'] as String,
+        value: change['value'] as int,
+      );
+    }).toList();
+    return Round(
+      id: row['id'] as String,
+      sessionId: row['session_id'] as String,
+      number: row['round_number'] as int,
+      changes: List.unmodifiable(changes),
+      createdBy: row['created_by'] as String,
+      createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
+      note: row['note'] as String?,
+      deletedAt: row['deleted_at'] == null
+          ? null
+          : DateTime.parse(row['deleted_at'] as String).toLocal(),
     );
   }
 

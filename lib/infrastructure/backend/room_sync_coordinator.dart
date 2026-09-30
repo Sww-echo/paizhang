@@ -23,12 +23,12 @@ class RoomSyncCoordinator {
   Future<void> start(String roomId) async {
     await stop();
     _roomId = roomId;
-    realtime.subscribeToRoom(roomId);
     _subscription = realtime.changes.listen((change) {
       if (_isRelevantChange(change)) {
         unawaited(_refreshAfterChange());
       }
     });
+    realtime.subscribeToRoom(roomId);
     await refresh();
   }
 
