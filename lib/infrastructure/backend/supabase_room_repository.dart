@@ -26,6 +26,18 @@ class RemoteInvite {
   String get shareLink => 'https://paizhang.app/join/$token';
 }
 
+class RemoteRoomSnapshot {
+  const RemoteRoomSnapshot({
+    required this.room,
+    required this.sessions,
+    required this.rounds,
+  });
+
+  final Room room;
+  final List<GameSession> sessions;
+  final List<Round> rounds;
+}
+
 class SupabaseRoomRepository {
   SupabaseRoomRepository(this.client, {Random? random})
     : _random = random ?? Random.secure();
@@ -141,6 +153,20 @@ class SupabaseRoomRepository {
         .isFilter('room_members.left_at', null)
         .order('updated_at', ascending: false);
     return rows.map<Room>(_roomFromRow).toList();
+  }
+
+  Future<RemoteRoomSnapshot> getRoomSnapshot(String roomId) async {
+    final room = await getRoom(roomId);
+    final sessions = await listGameSessions(roomId);
+    final rounds = <Round>[];
+    for (final session in sessions) {
+      rounds.addAll(await listRounds(session.id));
+    }
+    return RemoteRoomSnapshot(
+      room: room,
+      sessions: List.unmodifiable(sessions),
+      rounds: List.unmodifiable(rounds),
+    );
   }
 
   Future<GameSession> createGameSession({

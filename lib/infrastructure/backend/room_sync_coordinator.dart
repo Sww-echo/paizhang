@@ -35,8 +35,12 @@ class RoomSyncCoordinator {
   Future<void> refresh() async {
     final roomId = _roomId;
     if (roomId == null) return;
-    final room = await repository.getRoom(roomId);
-    await cache.saveRoom(room);
+    final snapshot = await repository.getRoomSnapshot(roomId);
+    await cache.saveRoomSnapshot(
+      room: snapshot.room,
+      sessions: snapshot.sessions,
+      rounds: snapshot.rounds,
+    );
   }
 
   Future<void> stop() async {
