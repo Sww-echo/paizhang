@@ -1,3 +1,5 @@
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+
 import '../domain/models.dart';
 import '../infrastructure/backend/supabase_auth_repository.dart';
 import '../infrastructure/backend/supabase_room_repository.dart';
@@ -16,10 +18,14 @@ class SupabaseAuthService {
     if (normalized.isEmpty) {
       throw const PaizhangException('手机号或邮箱不能为空');
     }
-    if (_looksLikePhone(normalized)) {
-      await authRepository.requestPhoneCode(normalized);
-    } else {
-      await authRepository.requestEmailCode(normalized);
+    try {
+      if (_looksLikePhone(normalized)) {
+        await authRepository.requestPhoneCode(normalized);
+      } else {
+        await authRepository.requestEmailCode(normalized);
+      }
+    } on AuthException catch (error) {
+      throw PaizhangException(_authErrorMessage(error));
     }
   }
 
@@ -39,21 +45,28 @@ class SupabaseAuthService {
       throw const PaizhangException('昵称不能为空');
     }
 
-    final response = _looksLikePhone(normalized)
-        ? await authRepository.verifyPhoneCode(phone: normalized, code: code)
-        : await authRepository.verifyEmailCode(email: normalized, code: code);
-    final authUser = response.user ?? authRepository.currentUser;
-    if (authUser == null) {
-      throw const PaizhangException('登录未建立有效会话');
-    }
+    try {
+      final response = _looksLikePhone(normalized)
+          ? await authRepository.verifyPhoneCode(phone: normalized, code: code)
+          : await authRepository.verifyEmailCode(
+              email: normalized,
+              code: code,
+            );
+      final authUser = response.user ?? authRepository.currentUser;
+      if (authUser == null) {
+        throw const PaizhangException('登录未建立有效会话');
+      }
 
-    await roomRepository.ensureCurrentUserProfile(nickname: nickname);
-    return User(
-      id: authUser.id,
-      nickname: nickname.trim(),
-      phone: authUser.phone,
-      email: authUser.email,
-    );
+      await roomRepository.ensureCurrentUserProfile(nickname: nickname);
+      return User(
+        id: authUser.id,
+        nickname: nickname.trim(),
+        phone: authUser.phone,
+        email: authUser.email,
+      );
+    } on AuthException catch (error) {
+      throw PaizhangException(_authErrorMessage(error));
+    }
   }
 
   Future<void> signOut() => authRepository.signOut();
@@ -62,4 +75,20 @@ class SupabaseAuthService {
 
   bool _looksLikePhone(String value) =>
       RegExp(r'^\+?[0-9][0-9\- ]{5,}$').hasMatch(value);
+
+  String _authErrorMessage(AuthException error) {
+    switch (error.code) {
+      case 'phone_provider_disabled':
+      case 'unsupported_phone_provider':
+        return '手机号登录尚未配置短信服务，请先在 Supabase 开启 Phone Provider，或改用邮箱登录。';
+      case 'otp_expired':
+        return '验证码或邮件链接已过期，请重新获取最新验证码，不要继续使用旧邮件。';
+      case 'invalid_otp':
+        return '验证码不正确，请检查最新邮件中的 6 位验证码。';
+      case 'email_not_confirmed':
+        return '邮箱还未验证，请先完成最新邮件中的验证。';
+      default:
+        return error.message;
+    }
+  }
 }

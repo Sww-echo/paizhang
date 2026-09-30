@@ -48,6 +48,19 @@ class _SignInPageState extends State<SignInPage> {
   String? _message;
 
   @override
+  void initState() {
+    super.initState();
+    final errorCode = Uri.base.queryParameters['error_code'];
+    if (errorCode != null) {
+      _message = switch (errorCode) {
+        'otp_expired' => '验证码或邮件链接已过期，请重新获取最新验证码。',
+        'access_denied' => '邮箱验证未完成，请使用最新邮件重新验证。',
+        _ => '邮箱验证失败，请重新获取验证码。',
+      };
+    }
+  }
+
+  @override
   void dispose() {
     _identifierController.dispose();
     _codeController.dispose();
