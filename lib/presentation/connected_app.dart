@@ -633,11 +633,22 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     _sync = widget.services.createRoomSyncCoordinator(
       onRefresh: () async => _reloadSnapshot(),
     );
-    unawaited(_sync.start(widget.room.id));
+    unawaited(_startSync());
+  }
+
+  Future<void> _startSync() async {
+    try {
+      await _sync.start(widget.room.id);
+    } catch (error) {
+      _showError(error);
+    }
   }
 
   void _reloadSnapshot() {
-    if (mounted) setState(() => _snapshotFuture = _loadSnapshot());
+    if (!mounted) return;
+    setState(() {
+      _snapshotFuture = _loadSnapshot();
+    });
   }
 
   Future<RemoteRoomSnapshot> _loadSnapshot() async {
