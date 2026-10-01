@@ -69,6 +69,35 @@ class SupabaseAuthService {
     }
   }
 
+  Future<void> signInWithPassword({
+    required String email,
+    required String password,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty || password.isEmpty) {
+      throw const PaizhangException('测试账号信息不完整');
+    }
+
+    try {
+      final response = await authRepository.signInWithPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      final authUser = response.user ?? authRepository.currentUser;
+      if (authUser == null) {
+        throw const PaizhangException('登录未建立有效会话');
+      }
+
+      final metadataNickname = authUser.userMetadata?['nickname'];
+      final nickname = metadataNickname is String && metadataNickname.isNotEmpty
+          ? metadataNickname
+          : normalizedEmail.split('@').first;
+      await roomRepository.ensureCurrentUserProfile(nickname: nickname);
+    } on AuthException catch (error) {
+      throw PaizhangException(_authErrorMessage(error));
+    }
+  }
+
   Future<void> signOut() => authRepository.signOut();
 
   Stream<dynamic> get authStateChanges => authRepository.authStateChanges;
@@ -87,6 +116,8 @@ class SupabaseAuthService {
         return '验证码不正确，请检查最新邮件中的 6 位验证码。';
       case 'email_not_confirmed':
         return '邮箱还未验证，请先完成最新邮件中的验证。';
+      case 'invalid_credentials':
+        return '测试账号或密码不正确。';
       default:
         return error.message;
     }

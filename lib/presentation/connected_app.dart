@@ -40,6 +40,13 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
+  static const _demoAccountsEnabled =
+      bool.fromEnvironment('PAIZHANG_ENABLE_DEMO_ACCOUNTS');
+  static const _demoAccountOneEmail = 'demo1@paizhang.test';
+  static const _demoAccountOnePassword = 'PzDemo-2026-01!';
+  static const _demoAccountTwoEmail = 'demo2@paizhang.test';
+  static const _demoAccountTwoPassword = 'PzDemo-2026-02!';
+
   final _identifierController = TextEditingController();
   final _codeController = TextEditingController();
   final _nicknameController = TextEditingController();
@@ -86,6 +93,15 @@ class _SignInPageState extends State<SignInPage> {
         identifier: _identifierController.text,
         code: _codeController.text,
         nickname: _nicknameController.text,
+      );
+    });
+  }
+
+  Future<void> _signInDemo({required String email, required String password}) {
+    return _run(() {
+      return widget.services.auth!.signInWithPassword(
+        email: email,
+        password: password,
       );
     });
   }
@@ -172,6 +188,44 @@ class _SignInPageState extends State<SignInPage> {
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
                           ),
+                        ),
+                      ],
+                      if (_demoAccountsEnabled) ...[
+                        const SizedBox(height: 20),
+                        const Divider(),
+                        const SizedBox(height: 12),
+                        const Text(
+                          '开发测试账号',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _signInDemo(
+                                        email: _demoAccountOneEmail,
+                                        password: _demoAccountOnePassword,
+                                      ),
+                                child: const Text('演示账号一'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _signInDemo(
+                                        email: _demoAccountTwoEmail,
+                                        password: _demoAccountTwoPassword,
+                                      ),
+                                child: const Text('演示账号二'),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ],

@@ -35,6 +35,16 @@ class SupabaseAuthRepository {
     );
   }
 
+  Future<AuthResponse> signInWithPassword({
+    required String email,
+    required String password,
+  }) {
+    return client.auth.signInWithPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+  }
+
   Future<void> signOut() => client.auth.signOut();
 
   User? get currentUser => client.auth.currentUser;
