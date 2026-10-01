@@ -235,7 +235,7 @@ class SupabaseRoomRepository {
     String operation = 'create',
   }) async {
     _requireUserId();
-    if (changes.isEmpty) {
+    if (operation != 'delete' && changes.isEmpty) {
       throw const PaizhangException('至少需要一名玩家的分数变化');
     }
     final result = await client.rpc(
@@ -265,6 +265,72 @@ class SupabaseRoomRepository {
     String? note,
     String? roundId,
     String? operationId,
+    String operation = 'create',
+  }) async {
+    return _writeRoundWithQueue(
+      queue: queue,
+      sessionId: sessionId,
+      roundNumber: roundNumber,
+      changes: changes,
+      note: note,
+      roundId: roundId,
+      operationId: operationId,
+      operation: operation,
+    );
+  }
+
+  Future<RoundWriteResult> updateRoundWithQueue({
+    required SyncQueue queue,
+    required String sessionId,
+    required int roundNumber,
+    required String roundId,
+    required List<ScoreChange> changes,
+    String? note,
+    String? operationId,
+  }) async {
+    return _writeRoundWithQueue(
+      queue: queue,
+      sessionId: sessionId,
+      roundNumber: roundNumber,
+      changes: changes,
+      note: note,
+      roundId: roundId,
+      operationId: operationId,
+      operation: 'update',
+    );
+  }
+
+  Future<RoundWriteResult> deleteRoundWithQueue({
+    required SyncQueue queue,
+    required Round round,
+    String? operationId,
+  }) async {
+    final result = await _writeRoundWithQueue(
+      queue: queue,
+      sessionId: round.sessionId,
+      roundNumber: round.number,
+      changes: const [],
+      note: round.note,
+      roundId: round.id,
+      operationId: operationId,
+      operation: 'delete',
+    );
+    if (!result.queued) return result;
+    return RoundWriteResult(
+      round: round.copyWith(deletedAt: DateTime.now()),
+      queued: true,
+    );
+  }
+
+  Future<RoundWriteResult> _writeRoundWithQueue({
+    required SyncQueue queue,
+    required String sessionId,
+    required int roundNumber,
+    required List<ScoreChange> changes,
+    required String operation,
+    String? note,
+    String? roundId,
+    String? operationId,
   }) async {
     final resolvedRoundId = roundId ?? _randomUuid();
     final resolvedOperationId = operationId ?? _randomUuid();
@@ -276,6 +342,7 @@ class SupabaseRoomRepository {
         note: note,
         roundId: resolvedRoundId,
         operationId: resolvedOperationId,
+        operation: operation,
       );
       return RoundWriteResult(round: round, queued: false);
     } catch (error) {
@@ -284,7 +351,7 @@ class SupabaseRoomRepository {
         operationId: resolvedOperationId,
         entityType: 'round',
         entityId: resolvedRoundId,
-        operation: 'create',
+        operation: operation,
         payload: {
           'round_id': resolvedRoundId,
           'session_id': sessionId,
@@ -309,6 +376,7 @@ class SupabaseRoomRepository {
           createdBy: _requireUserId(),
           createdAt: DateTime.now(),
           note: note,
+          deletedAt: operation == 'delete' ? DateTime.now() : null,
         ),
         queued: true,
       );
@@ -318,7 +386,9 @@ class SupabaseRoomRepository {
   Future<void> pushQueuedOperation(SyncQueueEntry entry) async {
     final payload = jsonDecode(entry.payloadJson) as Map<String, dynamic>;
     if (entry.entityType != 'round' ||
-        (entry.operation != 'create' && entry.operation != 'update')) {
+        (entry.operation != 'create' &&
+            entry.operation != 'update' &&
+            entry.operation != 'delete')) {
       throw StateError(
         'Unsupported sync operation: ${entry.entityType}/${entry.operation}',
       );
