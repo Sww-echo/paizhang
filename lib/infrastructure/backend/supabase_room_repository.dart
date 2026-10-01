@@ -16,6 +16,8 @@ class RemoteInvite {
     required this.code,
     required this.kind,
     required this.expiresAt,
+    this.createdAt,
+    this.revokedAt,
   });
 
   final String id;
@@ -24,8 +26,12 @@ class RemoteInvite {
   final String code;
   final InviteKind kind;
   final DateTime? expiresAt;
+  final DateTime? createdAt;
+  final DateTime? revokedAt;
 
-  String get shareLink => 'https://paizhang.app/join/$token';
+  bool get hasSecret => token.isNotEmpty;
+
+  String get shareLink => hasSecret ? 'https://paizhang.app/join/$token' : '';
 }
 
 class RemoteRoomSnapshot {
@@ -126,7 +132,88 @@ class SupabaseRoomRepository {
       code: row['invite_code'] as String,
       kind: kind,
       expiresAt: expiresAt,
+      createdAt: _dateTimeOrNull(row['created_at']),
+      revokedAt: _dateTimeOrNull(row['revoked_at']),
     );
+  }
+
+  Future<List<RemoteInvite>> listInvites(String roomId) async {
+    final rows = await client
+        .from('invite_tokens')
+        .select()
+        .eq('room_id', roomId)
+        .order('created_at', ascending: false);
+    return rows.map<RemoteInvite>(_inviteFromRow).toList();
+  }
+
+  Future<void> revokeInvite(String inviteId) async {
+    await client.rpc(
+      'revoke_room_invite',
+      params: {'target_invite_id': inviteId},
+    );
+  }
+
+  Future<RemoteInvite> refreshInvite({
+    required String inviteId,
+    required String roomId,
+    required InviteKind kind,
+    Duration? ttl,
+  }) async {
+    final token = _randomToken();
+    final code = _randomCode();
+    final expiresAt = ttl == null ? null : DateTime.now().toUtc().add(ttl);
+    final newInviteId = await client.rpc(
+      'refresh_room_invite',
+      params: {
+        'target_invite_id': inviteId,
+        'p_token_hash': _hash(token),
+        'p_invite_code': code,
+        'p_kind': kind.name,
+        'p_expires_at': expiresAt?.toIso8601String(),
+      },
+    ) as String;
+    return RemoteInvite(
+      id: newInviteId,
+      roomId: roomId,
+      token: token,
+      code: code,
+      kind: kind,
+      expiresAt: expiresAt,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  Future<Room> setInputPermission({
+    required String roomId,
+    required InputPermission permission,
+  }) async {
+    await client.rpc(
+      'set_room_input_permission',
+      params: {'target_room_id': roomId, 'p_input_permission': permission.name},
+    );
+    return getRoom(roomId);
+  }
+
+  Future<Room> removeMember({
+    required String roomId,
+    required String userId,
+  }) async {
+    await client.rpc(
+      'remove_room_member',
+      params: {'target_room_id': roomId, 'target_user_id': userId},
+    );
+    return getRoom(roomId);
+  }
+
+  Future<Room> transferOwnership({
+    required String roomId,
+    required String userId,
+  }) async {
+    await client.rpc(
+      'transfer_room_ownership',
+      params: {'target_room_id': roomId, 'new_owner_id': userId},
+    );
+    return getRoom(roomId);
   }
 
   Future<String> joinByToken(String token) async {
@@ -476,6 +563,24 @@ class SupabaseRoomRepository {
       createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
       members: List.unmodifiable(members),
     );
+  }
+
+  RemoteInvite _inviteFromRow(Map<String, dynamic> row) {
+    return RemoteInvite(
+      id: row['id'] as String,
+      roomId: row['room_id'] as String,
+      token: '',
+      code: row['invite_code'] as String? ?? '',
+      kind: InviteKind.values.byName(row['kind'] as String),
+      expiresAt: _dateTimeOrNull(row['expires_at']),
+      createdAt: _dateTimeOrNull(row['created_at']),
+      revokedAt: _dateTimeOrNull(row['revoked_at']),
+    );
+  }
+
+  DateTime? _dateTimeOrNull(Object? value) {
+    if (value is! String) return null;
+    return DateTime.parse(value).toLocal();
   }
 
   GameSession _gameSessionFromRow(Map<String, dynamic> row) {
