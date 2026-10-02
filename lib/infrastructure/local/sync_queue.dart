@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'app_database.dart';
 
 class SyncQueue {
-  const SyncQueue(this.database);
+  SyncQueue(this.database);
 
   final AppDatabase database;
+  Future<void>? _flushFuture;
 
   Future<void> enqueue({
     required String operationId,
@@ -27,6 +28,26 @@ class SyncQueue {
   }
 
   Future<void> flush(Future<void> Function(SyncQueueEntry entry) push) async {
+    final activeFlush = _flushFuture;
+    if (activeFlush != null) {
+      await activeFlush;
+      return;
+    }
+
+    final currentFlush = _flushPending(push);
+    _flushFuture = currentFlush;
+    try {
+      await currentFlush;
+    } finally {
+      if (identical(_flushFuture, currentFlush)) {
+        _flushFuture = null;
+      }
+    }
+  }
+
+  Future<void> _flushPending(
+    Future<void> Function(SyncQueueEntry entry) push,
+  ) async {
     final entries = await database.pendingOperations();
     for (final entry in entries) {
       try {

@@ -185,6 +185,31 @@ void main() {
     expect(await database.pendingOperations(), hasLength(2));
   });
 
+  test('同步队列并发刷新只执行一次，避免重复提交', () async {
+    final queue = SyncQueue(database);
+    await queue.enqueue(
+      operationId: 'op-concurrent',
+      entityType: 'round',
+      entityId: 'round-1',
+      operation: 'create',
+      payload: const {},
+    );
+
+    var pushCount = 0;
+    final firstFlush = queue.flush((_) async {
+      pushCount++;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    });
+    final secondFlush = queue.flush((_) async {
+      pushCount++;
+    });
+
+    await Future.wait([firstFlush, secondFlush]);
+
+    expect(pushCount, 1);
+    expect(await database.pendingOperations(), isEmpty);
+  });
+
   test('回合同步队列可以保存可重放的分数负载', () async {
     final queue = SyncQueue(database);
     await queue.enqueue(
