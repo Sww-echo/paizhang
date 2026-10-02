@@ -304,3 +304,31 @@
 ### Next Steps
 
 - 配置 Java/Android 构建环境，完成 Android 真机扫码、Web/自定义协议深链、过期/撤销和登录后加入验收；验收通过后进入个人/房间历史与系统分享
+
+
+## Session 10: 开始并完成历史与分享阶段
+<!-- trellis-session: v=2 fp=57716e312f553cfa -->
+
+**Date**: 2026-10-02
+**Task**: 开始并完成历史与分享阶段
+**Branch**: `main`
+
+### Summary
+
+完成 Phase 2 历史与分享：新增个人历史页、房间历史页、结算摘要系统分享和结算 PNG 分享；从首页、个人页和房间页接入入口。审查确认邀请闭环代码无新的静态问题，但仍需 Android 真机/真实 Supabase 验收，个人历史暂基于当前房间列表。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过；flutter test 21 项通过；flutter build web 成功；dart format 检查通过；git diff --check 通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 配置 Java/Android 环境并完成邀请深链、扫码、过期/撤销、登录后加入的真机验收；随后实施双客户端实时与断网 Sync Queue 验收
