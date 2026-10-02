@@ -76,3 +76,203 @@
 ### Next Steps
 
 - 应用 Supabase 迁移并进行双客户端并发记分、ownerOnly、断网恢复和多进行中牌局验收
+
+## Session 3: MVP 收尾任务与房间内闭环
+<!-- trellis-session: v=2 fp=paizhang-mvp-completion-20261001 -->
+
+**Date**: 2026-10-01
+**Task**: 创建收尾任务并实施未完成的房间内功能
+**Branch**: `main`
+
+### Summary
+
+从原始牌账任务中拆出独立的 MVP 收尾任务，按数据正确性、房间内闭环、邀请账号和发布验收分阶段跟踪。完成金额模式服务端平账校验、原子回合号与房间状态同步迁移，并将迁移应用到远端 Supabase。房间页新增回合历史查看、编辑、撤销、结算排名与最少转账路径、房间管理、成员管理、录入权限、离开房间和邀请码/链接复制；连接态个人页支持昵称修改，结算摘要支持复制。
+
+补充加入房间的分享链接解析，用户可以直接粘贴 `https://paizhang.app/join/<token>` 完成入房；系统级自动拉起和二维码扫描仍需移动端能力。
+
+### Main Changes
+
+- `.trellis/tasks/10-01-paizhang-mvp-completion/`：新增收尾任务、范围、设计和实施记录
+- `supabase/migrations/20261001160000_mvp_data_integrity.sql`：增加金额回合平账校验和牌局/房间状态同步触发器
+- `lib/presentation/connected_app.dart`：接入历史、编辑/撤销、结算、房间管理、成员操作、邀请复制、分享链接加入、昵称编辑和结算复制
+
+### Testing
+
+- [OK] `git diff --check`
+- [OK] Dart formatter
+- [OK] `flutter analyze`
+- [OK] `flutter test`：16 项通过
+- [OK] 个人页昵称编辑和结算复制改动后的再次验证
+- [OK] 分享链接解析改动后的 `flutter analyze` 和 `flutter test`：16 项通过
+- [OK] 远端 SQL 核对 `money_round_unbalanced` 校验和 `game_sessions_sync_room_status` 触发器
+
+### Status
+
+[OK] **Phase 1-2 completed; Phase 3 in progress**
+
+### Next Steps
+
+- 继续补二维码/扫描和真实链接落地；随后执行 Flutter 分析、测试和双客户端/断网验收
+
+
+## Session 4: 完成牌账 MVP 收尾代码审查修复
+<!-- trellis-session: v=2 fp=61dc11822dc1aa51 -->
+
+**Date**: 2026-10-01
+**Task**: 完成牌账 MVP 收尾代码审查修复
+**Branch**: `main`
+
+### Summary
+
+完成回合权限、邀请链接、昵称同步、弹窗滚动和回合恢复的收尾修复；远端已应用 round_restore 迁移，代码审查问题全部闭环。
+
+### Main Changes
+
+- 为回合历史和房间管理弹窗增加高度约束与滚动，避免内容过多溢出。
+- 补充录入函数内部权限保护，隐藏无效空菜单，并新增恢复已撤销回合入口。
+- 统一邀请链接生成与解析，支持自定义公开域名和 URI 编码 Token；昵称同步 Auth metadata 与 profiles。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过。
+- [OK] flutter test 通过，共 20 项。
+- [OK] git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续跟踪二维码、系统深链、历史页、系统分享、双客户端断网验收和真机打包。
+
+
+## Session 5: 补齐房主转让后的权限快照
+<!-- trellis-session: v=2 fp=58909b967d594d2d -->
+
+**Date**: 2026-10-01
+**Task**: 补齐房主转让后的权限快照
+**Branch**: `main`
+
+### Summary
+
+复查发现房主转让后新建/结束牌局仍读取页面初始房间对象，已改为使用最新远端快照判断权限并完成回归验证。
+
+### Main Changes
+
+- 新建牌局和结束牌局统一使用当前 RemoteRoomSnapshot 的房主身份与房间 ID。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过。
+- [OK] flutter test 通过，共 20 项。
+- [OK] git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续跟踪产品级二维码、系统深链、历史页和真机验收。
+
+
+## Session 6: 再次代码审查并修复状态一致性问题
+<!-- trellis-session: v=2 fp=3feb0f5d1dbaeb8c -->
+
+**Date**: 2026-10-02
+**Task**: 再次代码审查并修复状态一致性问题
+**Branch**: `main`
+
+### Summary
+
+再次审查发现并修复邀请码权限入口、创建/加入房间返回后的列表刷新、首次登录昵称 metadata 同步，以及 Realtime 快照重复请求问题；验证全部通过。
+
+### Main Changes
+
+- 邀请码入口仅对当前快照中的房主展示，函数内部仍保留权限保护。
+- 创建/加入房间返回后重新加载房间列表，修复离开房间后列表可能保留旧数据的问题。
+- 验证码首次登录和缺少 metadata 的密码登录同步 Auth metadata 与 profiles。
+- Realtime 协调器把已获取快照直接传给页面，避免重复网络请求和失败覆盖成功结果。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过。
+- [OK] flutter test 通过，共 20 项。
+- [OK] git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续完成二维码、系统深链、历史页、系统分享、双客户端离线验收和真机打包。
+
+
+## Session 7: 建立发布前顺序实施计划
+<!-- trellis-session: v=2 fp=1dfd22f9d6497da3 -->
+
+**Date**: 2026-10-02
+**Task**: 建立发布前顺序实施计划
+**Branch**: `main`
+
+### Summary
+
+将剩余工作按邀请闭环、历史分享、双客户端验收、发布准备四阶段排序，当前开始实施二维码、扫描和系统深链。
+
+### Main Changes
+
+- 在 MVP 收尾任务中新增 Phase 1-4 的实施顺序和验收标准。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 先完成二维码展示、二维码扫描和应用内邀请链接处理。
+
+
+## Session 8: 完成邀请闭环第一阶段
+<!-- trellis-session: v=2 fp=bb4015e815aa1802 -->
+
+**Date**: 2026-10-02
+**Task**: 完成邀请闭环第一阶段
+**Branch**: `main`
+
+### Summary
+
+完成房主二维码展示、扫码回填和 Web/自定义协议深链处理；未登录时保留邀请 Token，登录后自动加入房间。Android Manifest 已声明相机权限与邀请链接入口。flutter analyze、flutter test、格式检查和 git diff --check 通过；Android 调试构建因当前环境缺少 Java Runtime 暂未完成。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过；flutter test 21 项通过；dart format 检查通过；git diff --check 通过；flutter build apk --debug 被缺少 Java Runtime 阻塞
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 配置 Java/Android 构建环境后完成真机扫码、深链、过期/撤销和登录后加入验收；随后进入历史与系统分享阶段
