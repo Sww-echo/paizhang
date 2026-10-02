@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
 
+import '../../domain/invite_service.dart';
 import '../../domain/models.dart';
 import '../local/app_database.dart';
 import '../local/sync_queue.dart';
@@ -31,7 +32,8 @@ class RemoteInvite {
 
   bool get hasSecret => token.isNotEmpty;
 
-  String get shareLink => hasSecret ? 'https://paizhang.app/join/$token' : '';
+  String get shareLink =>
+      hasSecret ? const InviteService().createWebLink(token) : '';
 }
 
 class RemoteRoomSnapshot {
@@ -39,11 +41,13 @@ class RemoteRoomSnapshot {
     required this.room,
     required this.sessions,
     required this.rounds,
+    this.profiles = const {},
   });
 
   final Room room;
   final List<GameSession> sessions;
   final List<Round> rounds;
+  final Map<String, User> profiles;
 }
 
 class RoundWriteResult {
@@ -258,11 +262,33 @@ class SupabaseRoomRepository {
     for (final session in sessions) {
       rounds.addAll(await listRounds(session.id));
     }
+    final profiles = await _listMemberProfiles(room.members);
     return RemoteRoomSnapshot(
       room: room,
       sessions: List.unmodifiable(sessions),
       rounds: List.unmodifiable(rounds),
+      profiles: Map.unmodifiable(profiles),
     );
+  }
+
+  Future<Map<String, User>> _listMemberProfiles(
+    Iterable<RoomMember> members,
+  ) async {
+    final userIds = members.map((member) => member.userId).toSet().toList();
+    if (userIds.isEmpty) return {};
+    final rows = await client
+        .from('profiles')
+        .select('id, nickname, phone, email')
+        .inFilter('id', userIds);
+    return {
+      for (final row in rows)
+        row['id'] as String: User(
+          id: row['id'] as String,
+          nickname: row['nickname'] as String,
+          phone: row['phone'] as String?,
+          email: row['email'] as String?,
+        ),
+    };
   }
 
   Future<GameSession> createGameSession({

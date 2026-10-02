@@ -45,6 +45,12 @@ class SupabaseAuthRepository {
     );
   }
 
+  Future<UserResponse> updateNickname(String nickname) {
+    return client.auth.updateUser(
+      UserAttributes(data: {'nickname': nickname.trim()}),
+    );
+  }
+
   Future<void> signOut() => client.auth.signOut();
 
   User? get currentUser => client.auth.currentUser;

@@ -60,7 +60,7 @@ class AppServices {
   }
 
   RoomSyncCoordinator createRoomSyncCoordinator({
-    required Future<void> Function() onRefresh,
+    required Future<void> Function(RemoteRoomSnapshot snapshot) onRefresh,
   }) {
     final repository = rooms;
     final realtimeClient = realtime;

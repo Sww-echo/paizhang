@@ -48,19 +48,20 @@ class SupabaseAuthService {
     try {
       final response = _looksLikePhone(normalized)
           ? await authRepository.verifyPhoneCode(phone: normalized, code: code)
-          : await authRepository.verifyEmailCode(
-              email: normalized,
-              code: code,
-            );
+          : await authRepository.verifyEmailCode(email: normalized, code: code);
       final authUser = response.user ?? authRepository.currentUser;
       if (authUser == null) {
         throw const PaizhangException('登录未建立有效会话');
       }
 
-      await roomRepository.ensureCurrentUserProfile(nickname: nickname);
+      final normalizedNickname = nickname.trim();
+      await authRepository.updateNickname(normalizedNickname);
+      await roomRepository.ensureCurrentUserProfile(
+        nickname: normalizedNickname,
+      );
       return User(
         id: authUser.id,
-        nickname: nickname.trim(),
+        nickname: normalizedNickname,
         phone: authUser.phone,
         email: authUser.email,
       );
@@ -92,6 +93,9 @@ class SupabaseAuthService {
       final nickname = metadataNickname is String && metadataNickname.isNotEmpty
           ? metadataNickname
           : normalizedEmail.split('@').first;
+      if (metadataNickname is! String || metadataNickname.isEmpty) {
+        await authRepository.updateNickname(nickname);
+      }
       await roomRepository.ensureCurrentUserProfile(nickname: nickname);
     } on AuthException catch (error) {
       throw PaizhangException(_authErrorMessage(error));
@@ -99,6 +103,22 @@ class SupabaseAuthService {
   }
 
   Future<void> signOut() => authRepository.signOut();
+
+  Future<void> updateNickname({required String nickname}) async {
+    final normalized = nickname.trim();
+    if (normalized.isEmpty) {
+      throw const PaizhangException('昵称不能为空');
+    }
+    if (normalized.length > 40) {
+      throw const PaizhangException('昵称不能超过 40 个字符');
+    }
+    try {
+      await authRepository.updateNickname(normalized);
+      await roomRepository.ensureCurrentUserProfile(nickname: normalized);
+    } on AuthException catch (error) {
+      throw PaizhangException(_authErrorMessage(error));
+    }
+  }
 
   Stream<dynamic> get authStateChanges => authRepository.authStateChanges;
 

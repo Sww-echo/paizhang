@@ -1,21 +1,119 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../application/app_services.dart';
+import '../domain/invite_service.dart';
 import '../domain/models.dart';
+import '../domain/settlement_calculator.dart';
 import '../infrastructure/backend/room_sync_coordinator.dart';
 import '../infrastructure/backend/supabase_room_repository.dart';
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({required this.services, super.key});
 
   final AppServices services;
 
   @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  final AppLinks _appLinks = AppLinks();
+  final Set<String> _handledInviteTokens = <String>{};
+  StreamSubscription<Uri>? _linkSubscription;
+  String? _pendingInviteToken;
+  String? _processingInviteToken;
+
+  @override
+  void initState() {
+    super.initState();
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      _handleUri,
+      onError: (_) {},
+    );
+    unawaited(_loadInitialLink());
+  }
+
+  Future<void> _loadInitialLink() async {
+    if (kIsWeb) _handleUri(Uri.base);
+    try {
+      final initialLink = await _appLinks.getInitialLink();
+      if (initialLink != null) _handleUri(initialLink);
+    } catch (_) {}
+  }
+
+  void _handleUri(Uri uri) {
+    final token = const InviteService().extractToken(uri.toString());
+    if (token == null ||
+        _handledInviteTokens.contains(token) ||
+        _processingInviteToken == token) {
+      return;
+    }
+    _pendingInviteToken = token;
+    _scheduleInviteConsumption();
+  }
+
+  void _scheduleInviteConsumption() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_consumePendingInvite());
+    });
+  }
+
+  Future<void> _consumePendingInvite() async {
+    final token = _pendingInviteToken;
+    final currentUser = widget.services.client?.auth.currentUser;
+    if (token == null ||
+        currentUser == null ||
+        _processingInviteToken != null) {
+      return;
+    }
+
+    _pendingInviteToken = null;
+    _processingInviteToken = token;
+    try {
+      final roomId = await widget.services.rooms!.joinByToken(token);
+      final room = await widget.services.rooms!.getRoom(roomId);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              ConnectedRoomPage(services: widget.services, room: room),
+        ),
+      );
+    } catch (error) {
+      _showInviteError(error);
+    } finally {
+      _handledInviteTokens.add(token);
+      _processingInviteToken = null;
+    }
+  }
+
+  void _showInviteError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(error.toString())));
+  }
+
+  @override
+  void dispose() {
+    unawaited(_linkSubscription?.cancel());
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final auth = services.auth;
-    final client = services.client;
+    final auth = widget.services.auth;
+    final client = widget.services.client;
     if (auth == null || client == null) {
       return const SizedBox.shrink();
     }
@@ -23,8 +121,9 @@ class AuthGate extends StatelessWidget {
       stream: auth.authStateChanges,
       builder: (context, snapshot) {
         final user = client.auth.currentUser;
-        if (user == null) return SignInPage(services: services);
-        return ConnectedHomeShell(services: services);
+        if (user == null) return SignInPage(services: widget.services);
+        _scheduleInviteConsumption();
+        return ConnectedHomeShell(services: widget.services);
       },
     );
   }
@@ -40,8 +139,9 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  static const _demoAccountsEnabled =
-      bool.fromEnvironment('PAIZHANG_ENABLE_DEMO_ACCOUNTS');
+  static const _demoAccountsEnabled = bool.fromEnvironment(
+    'PAIZHANG_ENABLE_DEMO_ACCOUNTS',
+  );
   static const _demoAccountOneEmail = 'demo1@paizhang.test';
   static const _demoAccountOnePassword = 'PzDemo-2026-01!';
   static const _demoAccountTwoEmail = 'demo2@paizhang.test';
@@ -356,13 +456,16 @@ class ConnectedHomePage extends StatelessWidget {
   }
 
   Future<void> _joinRoom(BuildContext context) async {
-    final code = await showDialog<String>(
+    final input = await showDialog<String>(
       context: context,
       builder: (context) => const _JoinRoomDialog(),
     );
-    if (code == null || !context.mounted) return;
+    if (input == null || !context.mounted) return;
     try {
-      final roomId = await services.rooms!.joinByCode(code);
+      final token = const InviteService().extractToken(input);
+      final roomId = token == null
+          ? await services.rooms!.joinByCode(input)
+          : await services.rooms!.joinByToken(token);
       final room = await services.rooms!.getRoom(roomId);
       onRoomsChanged();
       if (!context.mounted) return;
@@ -374,6 +477,14 @@ class ConnectedHomePage extends StatelessWidget {
     } catch (error) {
       onMessage(error.toString());
     }
+  }
+
+  Future<void> _openHistory(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ConnectedHistoryPage(services: services),
+      ),
+    );
   }
 
   @override
@@ -425,6 +536,12 @@ class ConnectedHomePage extends StatelessWidget {
             title: Text('Supabase + Drift 同步'),
             subtitle: Text('在线实时更新，离线操作进入同步队列'),
           ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => _openHistory(context),
+          icon: const Icon(Icons.history_rounded),
+          label: const Text('查看历史记录'),
         ),
       ],
     );
@@ -487,19 +604,23 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
               ConnectedRoomPage(services: widget.services, room: room),
         ),
       );
+      if (mounted) setState(_reload);
     } catch (error) {
       widget.onMessage(error.toString());
     }
   }
 
   Future<void> _joinRoom() async {
-    final code = await showDialog<String>(
+    final input = await showDialog<String>(
       context: context,
       builder: (context) => const _JoinRoomDialog(),
     );
-    if (code == null) return;
+    if (input == null) return;
     try {
-      final roomId = await widget.services.rooms!.joinByCode(code);
+      final token = const InviteService().extractToken(input);
+      final roomId = token == null
+          ? await widget.services.rooms!.joinByCode(input)
+          : await widget.services.rooms!.joinByToken(token);
       final room = await widget.services.rooms!.getRoom(roomId);
       if (!mounted) return;
       setState(_reload);
@@ -509,6 +630,7 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
               ConnectedRoomPage(services: widget.services, room: room),
         ),
       );
+      if (mounted) setState(_reload);
     } catch (error) {
       widget.onMessage(error.toString());
     }
@@ -625,13 +747,17 @@ class ConnectedRoomPage extends StatefulWidget {
 class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
   late Future<RemoteRoomSnapshot> _snapshotFuture;
   late final RoomSyncCoordinator _sync;
+  String? _selectedSessionId;
 
   @override
   void initState() {
     super.initState();
     _snapshotFuture = widget.services.rooms!.getRoomSnapshot(widget.room.id);
     _sync = widget.services.createRoomSyncCoordinator(
-      onRefresh: () async => _reloadSnapshot(),
+      onRefresh: (snapshot) async {
+        if (!mounted) return;
+        setState(() => _snapshotFuture = Future.value(snapshot));
+      },
     );
     unawaited(_startSync());
   }
@@ -663,6 +789,60 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     return snapshot;
   }
 
+  GameSession? _selectedActiveSession(RemoteRoomSnapshot snapshot) {
+    for (final session in snapshot.sessions) {
+      if (session.id == _selectedSessionId &&
+          session.status == GameSessionStatus.active) {
+        return session;
+      }
+    }
+    for (final session in snapshot.sessions) {
+      if (session.status == GameSessionStatus.active) return session;
+    }
+    return null;
+  }
+
+  bool _canInputRoom(Room room) {
+    if (room.inputPermission == InputPermission.all) return true;
+    final currentUserId = widget.services.client?.auth.currentUser?.id;
+    return currentUserId != null && currentUserId == room.ownerId;
+  }
+
+  bool _isRoomOwner(Room room) {
+    final currentUserId = widget.services.client?.auth.currentUser?.id;
+    return currentUserId != null && currentUserId == room.ownerId;
+  }
+
+  bool _canEditRound(RemoteRoomSnapshot snapshot, Round round) {
+    final currentUserId = widget.services.client?.auth.currentUser?.id;
+    final session = snapshot.sessions.where(
+      (item) => item.id == round.sessionId,
+    );
+    return currentUserId != null &&
+        round.createdBy == currentUserId &&
+        session.isNotEmpty &&
+        session.first.status == GameSessionStatus.active &&
+        _canInputRoom(snapshot.room);
+  }
+
+  void _showLocalRound(RemoteRoomSnapshot snapshot, Round round) {
+    final rounds = [
+      ...snapshot.rounds.where((item) => item.id != round.id),
+      round,
+    ];
+    if (!mounted) return;
+    setState(() {
+      _snapshotFuture = Future.value(
+        RemoteRoomSnapshot(
+          room: snapshot.room,
+          sessions: snapshot.sessions,
+          rounds: List.unmodifiable(rounds),
+          profiles: snapshot.profiles,
+        ),
+      );
+    });
+  }
+
   @override
   void dispose() {
     unawaited(_sync.stop());
@@ -671,8 +851,13 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
 
   Future<void> _createInvite() async {
     try {
+      final snapshot = await _snapshotFuture;
+      if (!_isRoomOwner(snapshot.room)) {
+        _showError('只有房主可以生成邀请码');
+        return;
+      }
       final invite = await widget.services.rooms!.createInvite(
-        roomId: widget.room.id,
+        roomId: snapshot.room.id,
         kind: InviteKind.code,
       );
       if (!mounted) return;
@@ -680,8 +865,58 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('房间邀请码'),
-          content: SelectableText(invite.code),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('邀请码'),
+              const SizedBox(height: 6),
+              if (invite.shareLink.isNotEmpty) ...[
+                Center(
+                  child: QrImageView(
+                    data: invite.shareLink,
+                    size: 220,
+                    backgroundColor: Colors.white,
+                    semanticsLabel: '房间邀请二维码',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              SelectableText(
+                invite.code,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('分享链接'),
+              const SizedBox(height: 6),
+              SelectableText(invite.shareLink),
+            ],
+          ),
           actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: invite.code));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('邀请码已复制')));
+                }
+              },
+              child: const Text('复制邀请码'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: invite.shareLink));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('分享链接已复制')));
+                }
+              },
+              child: const Text('复制链接'),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('完成'),
@@ -694,7 +929,11 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     }
   }
 
-  Future<void> _createSession() async {
+  Future<void> _createSession(RemoteRoomSnapshot snapshot) async {
+    if (!_isRoomOwner(snapshot.room)) {
+      _showError('只有房主可以创建牌局');
+      return;
+    }
     final name = await showDialog<String>(
       context: context,
       builder: (context) => const _TextInputDialog(
@@ -706,7 +945,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     if (name == null) return;
     try {
       final session = await widget.services.rooms!.createGameSession(
-        roomId: widget.room.id,
+        roomId: snapshot.room.id,
         name: name,
       );
       await widget.services.rooms!.startGameSession(session.id);
@@ -720,6 +959,14 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     GameSession session,
     RemoteRoomSnapshot snapshot,
   ) async {
+    if (!_canInputRoom(snapshot.room)) {
+      _showError('当前房间不允许录入');
+      return;
+    }
+    if (session.status != GameSessionStatus.active) {
+      _showError('请先开始一场牌局');
+      return;
+    }
     final existingRounds = snapshot.rounds
         .where((round) => round.sessionId == session.id)
         .toList();
@@ -728,6 +975,11 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       builder: (context) => _ScoreDialog(members: snapshot.room.members),
     );
     if (changes == null || changes.isEmpty) return;
+    if (snapshot.room.scoringMode == ScoringMode.money &&
+        _sumChanges(changes) != 0) {
+      _showError('金额模式每局必须平账，当前差额为 ${_sumChanges(changes)}');
+      return;
+    }
     try {
       final result = await widget.services.rooms!.recordRoundWithQueue(
         queue: widget.services.queue,
@@ -737,6 +989,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       );
       if (result.queued) {
         await widget.services.cache.saveRound(result.round);
+        _showLocalRound(snapshot, result.round);
         if (mounted) {
           ScaffoldMessenger.of(
             context,
@@ -750,7 +1003,248 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     }
   }
 
-  Future<void> _finishSession(GameSession session) async {
+  Future<void> _editRound(RemoteRoomSnapshot snapshot, Round round) async {
+    if (!_canEditRound(snapshot, round)) {
+      _showError('当前牌局不允许修改回合');
+      return;
+    }
+    final changes = await showDialog<List<ScoreChange>>(
+      context: context,
+      builder: (context) => _ScoreDialog(
+        members: snapshot.room.members,
+        initialChanges: round.changes,
+        title: '编辑第 ${round.number} 局',
+      ),
+    );
+    if (changes == null || changes.isEmpty) return;
+    if (snapshot.room.scoringMode == ScoringMode.money &&
+        _sumChanges(changes) != 0) {
+      _showError('金额模式每局必须平账，当前差额为 ${_sumChanges(changes)}');
+      return;
+    }
+    try {
+      final result = await widget.services.rooms!.updateRoundWithQueue(
+        queue: widget.services.queue,
+        sessionId: round.sessionId,
+        roundNumber: round.number,
+        roundId: round.id,
+        changes: changes,
+        note: round.note,
+      );
+      if (result.queued) {
+        await widget.services.cache.saveRound(result.round);
+        _showLocalRound(snapshot, result.round);
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('当前网络不可用，修改已保存，稍后自动同步')));
+        }
+      } else {
+        _reloadSnapshot();
+      }
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _deleteRound(RemoteRoomSnapshot snapshot, Round round) async {
+    if (!_canEditRound(snapshot, round)) {
+      _showError('只有该回合创建者可以撤销回合');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('撤销第 ${round.number} 局？'),
+        content: const Text('这局会保留在历史记录中，但不再计入总分。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('撤销'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final result = await widget.services.rooms!.deleteRoundWithQueue(
+        queue: widget.services.queue,
+        round: round,
+      );
+      await widget.services.cache.saveRound(result.round);
+      _showLocalRound(snapshot, result.round);
+      if (result.queued && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前网络不可用，撤销已保存，稍后自动同步')));
+      }
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _restoreRound(RemoteRoomSnapshot snapshot, Round round) async {
+    if (!_canEditRound(snapshot, round)) {
+      _showError('只有该回合创建者可以恢复回合');
+      return;
+    }
+    if (round.changes.isEmpty) {
+      _showError('该回合没有可恢复的分数记录');
+      return;
+    }
+    try {
+      final result = await widget.services.rooms!.updateRoundWithQueue(
+        queue: widget.services.queue,
+        sessionId: round.sessionId,
+        roundNumber: round.number,
+        roundId: round.id,
+        changes: round.changes,
+        note: round.note,
+      );
+      await widget.services.cache.saveRound(result.round);
+      _showLocalRound(snapshot, result.round);
+      if (result.queued && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前网络不可用，恢复已保存，稍后自动同步')));
+      }
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _showRoundHistory(
+    RemoteRoomSnapshot snapshot,
+    GameSession session,
+  ) async {
+    final rounds =
+        snapshot.rounds.where((round) => round.sessionId == session.id).toList()
+          ..sort((left, right) => right.number.compareTo(left.number));
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _RoundHistoryDialog(
+        session: session,
+        rounds: rounds,
+        profiles: snapshot.profiles,
+        currentUserId: widget.services.client?.auth.currentUser?.id,
+        canEdit:
+            session.status == GameSessionStatus.active &&
+            _canInputRoom(snapshot.room),
+        onEdit: (round) async {
+          Navigator.of(dialogContext).pop();
+          await _editRound(snapshot, round);
+        },
+        onDelete: (round) async {
+          Navigator.of(dialogContext).pop();
+          await _deleteRound(snapshot, round);
+        },
+        onRestore: (round) async {
+          Navigator.of(dialogContext).pop();
+          await _restoreRound(snapshot, round);
+        },
+      ),
+    );
+  }
+
+  Future<void> _showSettlement(
+    RemoteRoomSnapshot snapshot,
+    GameSession session,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _SettlementPage(
+          room: snapshot.room,
+          session: session,
+          rounds: snapshot.rounds
+              .where((round) => round.sessionId == session.id)
+              .toList(),
+          profiles: snapshot.profiles,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRoomHistory() async {
+    try {
+      final snapshot = await _snapshotFuture;
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => _RoomHistoryPage(snapshot: snapshot)),
+      );
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _transferScore(
+    RemoteRoomSnapshot snapshot, {
+    required GameSession session,
+    String? fromPlayerId,
+  }) async {
+    if (!_canInputRoom(snapshot.room)) {
+      _showError('当前房间不允许录入');
+      return;
+    }
+    if (session.status != GameSessionStatus.active) {
+      _showError('请先开始一场牌局');
+      return;
+    }
+
+    final totals = _scoreTotalsForSession(snapshot.rounds, session.id);
+    final transfer = await showDialog<_ScoreTransfer>(
+      context: context,
+      builder: (context) => _ScoreTransferDialog(
+        members: snapshot.room.members,
+        profiles: snapshot.profiles,
+        totals: totals,
+        scoringMode: snapshot.room.scoringMode,
+        initialFromPlayerId: fromPlayerId,
+      ),
+    );
+    if (transfer == null) return;
+
+    final existingRounds = snapshot.rounds
+        .where((round) => round.sessionId == session.id)
+        .toList();
+    try {
+      final result = await widget.services.rooms!.recordRoundWithQueue(
+        queue: widget.services.queue,
+        sessionId: session.id,
+        roundNumber: existingRounds.length + 1,
+        changes: [
+          ScoreChange(playerId: transfer.fromPlayerId, value: -transfer.amount),
+          ScoreChange(playerId: transfer.toPlayerId, value: transfer.amount),
+        ],
+        note: '${_scoreUnitLabel(snapshot.room.scoringMode)}转换',
+      );
+      if (result.queued) {
+        await widget.services.cache.saveRound(result.round);
+        _showLocalRound(snapshot, result.round);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('当前网络不可用，积分转换已保存，稍后自动同步')),
+          );
+        }
+      } else {
+        _reloadSnapshot();
+      }
+    } catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _finishSession(
+    RemoteRoomSnapshot snapshot,
+    GameSession session,
+  ) async {
+    if (!_isRoomOwner(snapshot.room)) {
+      _showError('只有房主可以结束牌局');
+      return;
+    }
     try {
       await widget.services.rooms!.finishGameSession(session.id);
       _reloadSnapshot();
@@ -759,10 +1253,113 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     }
   }
 
+  Future<void> _showRoomManagement(RemoteRoomSnapshot snapshot) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _RoomManagementDialog(
+        room: snapshot.room,
+        profiles: snapshot.profiles,
+        currentUserId: widget.services.client?.auth.currentUser?.id,
+        onPermissionChanged: (permission) async {
+          Navigator.of(dialogContext).pop();
+          try {
+            await widget.services.rooms!.setInputPermission(
+              roomId: snapshot.room.id,
+              permission: permission,
+            );
+            _reloadSnapshot();
+          } catch (error) {
+            _showError(error);
+          }
+        },
+        onRemoveMember: (userId) async {
+          Navigator.of(dialogContext).pop();
+          final confirmed = await _confirmAction(
+            title: '移除成员？',
+            message: '移除后，该成员不能继续录入或查看这个房间。',
+            confirmLabel: '移除',
+          );
+          if (!confirmed) return;
+          try {
+            await widget.services.rooms!.removeMember(
+              roomId: snapshot.room.id,
+              userId: userId,
+            );
+            _reloadSnapshot();
+          } catch (error) {
+            _showError(error);
+          }
+        },
+        onTransferOwnership: (userId) async {
+          Navigator.of(dialogContext).pop();
+          final confirmed = await _confirmAction(
+            title: '转让房主？',
+            message: '转让后你将不能继续管理成员和录入权限。',
+            confirmLabel: '转让',
+          );
+          if (!confirmed) return;
+          try {
+            await widget.services.rooms!.transferOwnership(
+              roomId: snapshot.room.id,
+              userId: userId,
+            );
+            _reloadSnapshot();
+          } catch (error) {
+            _showError(error);
+          }
+        },
+        onLeaveRoom: () async {
+          Navigator.of(dialogContext).pop();
+          final confirmed = await _confirmAction(
+            title: '离开房间？',
+            message: '离开后需要新的邀请码才能重新加入。',
+            confirmLabel: '离开',
+          );
+          if (!confirmed) return;
+          try {
+            await widget.services.rooms!.leaveRoom(snapshot.room.id);
+            if (mounted) Navigator.of(context).pop();
+          } catch (error) {
+            _showError(error);
+          }
+        },
+      ),
+    );
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(confirmLabel),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   void _showError(Object error) {
     if (!mounted) return;
+    final rawMessage = error.toString();
+    final message = rawMessage.contains('money_round_unbalanced')
+        ? '金额模式每局必须平账'
+        : rawMessage;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(error.toString())));
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -772,9 +1369,34 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         title: Text(widget.room.name),
         actions: [
           IconButton(
-            onPressed: _createInvite,
-            icon: const Icon(Icons.ios_share_rounded),
-            tooltip: '生成邀请码',
+            onPressed: _showRoomHistory,
+            icon: const Icon(Icons.history_rounded),
+            tooltip: '房间历史',
+          ),
+          FutureBuilder<RemoteRoomSnapshot>(
+            future: _snapshotFuture,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || !_isRoomOwner(snapshot.data!.room)) {
+                return const SizedBox.shrink();
+              }
+              return IconButton(
+                onPressed: _createInvite,
+                icon: const Icon(Icons.ios_share_rounded),
+                tooltip: '生成邀请码',
+              );
+            },
+          ),
+          IconButton(
+            onPressed: () async {
+              try {
+                final snapshot = await _snapshotFuture;
+                if (mounted) await _showRoomManagement(snapshot);
+              } catch (error) {
+                _showError(error);
+              }
+            },
+            icon: const Icon(Icons.settings_rounded),
+            tooltip: '房间管理',
           ),
         ],
       ),
@@ -791,6 +1413,19 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
             );
           }
           final data = snapshot.data!;
+          final activeSession = _selectedActiveSession(data);
+          final activeSessions = data.sessions
+              .where((session) => session.status == GameSessionStatus.active)
+              .toList();
+          final totals = activeSession == null
+              ? const <String, int>{}
+              : _scoreTotalsForSession(data.rounds, activeSession.id);
+          final members = data.room.members
+              .where((member) => member.isActive)
+              .toList();
+          final canInput = _canInputRoom(data.room);
+          final isOwner = _isRoomOwner(data.room);
+          final scoreUnit = _scoreUnitLabel(data.room.scoringMode);
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
@@ -801,6 +1436,72 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                   title: Text('${data.room.members.length} 位成员'),
                   subtitle: Text(data.room.gameType),
                   trailing: Text(data.room.status.name),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '成员分数',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                elevation: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (activeSessions.length > 1) ...[
+                        DropdownButtonFormField<String>(
+                          initialValue: activeSession?.id,
+                          decoration: InputDecoration(
+                            labelText: '当前牌局',
+                            helperText: '选择头像转换所对应的进行中牌局',
+                          ),
+                          items: [
+                            for (final session in activeSessions)
+                              DropdownMenuItem(
+                                value: session.id,
+                                child: Text(session.name),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _selectedSessionId = value);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (activeSession == null)
+                        const Text('请先开始一场牌局')
+                      else if (!canInput)
+                        const Text('当前仅房主可以录入分数'),
+                      if (activeSession != null && canInput)
+                        Text(
+                          '点击成员头像进行$scoreUnit转换',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 16,
+                        children: [
+                          for (final member in members)
+                            _RoomMemberScoreTile(
+                              member: member,
+                              profile: data.profiles[member.userId],
+                              score: totals[member.userId] ?? 0,
+                              enabled: activeSession != null && canInput,
+                              onTap: () => _transferScore(
+                                data,
+                                session: activeSession!,
+                                fromPlayerId: member.userId,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -816,7 +1517,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                     ),
                   ),
                   FilledButton.icon(
-                    onPressed: _createSession,
+                    onPressed: isOwner ? () => _createSession(data) : null,
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('新建'),
                   ),
@@ -839,7 +1540,11 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                         .where((round) => round.sessionId == session.id)
                         .length,
                     onRecord: () => _recordRound(session, data),
-                    onFinish: () => _finishSession(session),
+                    onFinish: () => _finishSession(data, session),
+                    onHistory: () => _showRoundHistory(data, session),
+                    onSettlement: () => _showSettlement(data, session),
+                    canRecord: canInput,
+                    canManage: isOwner,
                   ),
             ],
           );
@@ -849,15 +1554,75 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
   }
 }
 
-class ConnectedProfilePage extends StatelessWidget {
+class ConnectedProfilePage extends StatefulWidget {
   const ConnectedProfilePage({required this.services, super.key});
 
   final AppServices services;
 
   @override
+  State<ConnectedProfilePage> createState() => _ConnectedProfilePageState();
+}
+
+class _ConnectedProfilePageState extends State<ConnectedProfilePage> {
+  late String _nickname;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = widget.services.client!.auth.currentUser;
+    _nickname = (user?.userMetadata?['nickname'] as String?)?.trim() ?? '';
+  }
+
+  Future<void> _editNickname() async {
+    final controller = TextEditingController(text: _nickname);
+    final nickname = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('修改昵称'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: const InputDecoration(labelText: '昵称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (nickname == null || nickname.trim().isEmpty) return;
+    try {
+      await widget.services.auth!.updateNickname(nickname: nickname.trim());
+      if (mounted) setState(() => _nickname = nickname.trim());
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _openHistory() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ConnectedHistoryPage(services: widget.services),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = services.client!.auth.currentUser;
-    final nickname = user?.userMetadata?['nickname'] as String?;
+    final user = widget.services.client!.auth.currentUser;
+    final displayName = _nickname.isEmpty
+        ? user?.email ?? user?.phone ?? '牌友'
+        : _nickname;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
       children: [
@@ -870,19 +1635,1032 @@ class ConnectedProfilePage extends StatelessWidget {
           elevation: 0,
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
-            title: Text(nickname ?? user?.email ?? user?.phone ?? '牌友'),
+            title: Text(displayName),
             subtitle: Text(user?.email ?? user?.phone ?? ''),
+            trailing: const Icon(Icons.edit_rounded),
+            onTap: _editNickname,
           ),
         ),
         const SizedBox(height: 20),
+        Card(
+          elevation: 0,
+          child: ListTile(
+            leading: const Icon(Icons.history_rounded),
+            title: const Text('历史记录'),
+            subtitle: const Text('查看个人和房间的过往牌局'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: _openHistory,
+          ),
+        ),
+        const SizedBox(height: 12),
         FilledButton.tonalIcon(
-          onPressed: () => services.auth!.signOut(),
+          onPressed: () => widget.services.auth!.signOut(),
           icon: const Icon(Icons.logout_rounded),
           label: const Text('退出登录'),
         ),
       ],
     );
   }
+}
+
+class ConnectedHistoryPage extends StatefulWidget {
+  const ConnectedHistoryPage({required this.services, super.key});
+
+  final AppServices services;
+
+  @override
+  State<ConnectedHistoryPage> createState() => _ConnectedHistoryPageState();
+}
+
+class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
+  late Future<List<_HistoryRoomData>> _historyFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    _historyFuture = _loadHistory();
+  }
+
+  Future<List<_HistoryRoomData>> _loadHistory() async {
+    final rooms = await widget.services.rooms!.listMyRooms();
+    final history = <_HistoryRoomData>[];
+    for (final room in rooms) {
+      final snapshot = await widget.services.rooms!.getRoomSnapshot(room.id);
+      final sessions =
+          snapshot.sessions
+              .where(
+                (session) => snapshot.rounds.any(
+                  (round) => round.sessionId == session.id,
+                ),
+              )
+              .toList()
+            ..sort(
+              (left, right) =>
+                  _sessionDate(right).compareTo(_sessionDate(left)),
+            );
+      if (sessions.isNotEmpty) {
+        history.add(
+          _HistoryRoomData(
+            room: room,
+            snapshot: snapshot,
+            sessions: List.unmodifiable(sessions),
+          ),
+        );
+      }
+    }
+    history.sort((left, right) => right.latestDate.compareTo(left.latestDate));
+    return history;
+  }
+
+  Future<void> _refresh() async {
+    setState(_reload);
+    await _historyFuture;
+  }
+
+  Future<void> _openSettlement(
+    _HistoryRoomData history,
+    GameSession session,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _SettlementPage(
+          room: history.room,
+          session: session,
+          rounds: history.snapshot.rounds
+              .where((round) => round.sessionId == session.id)
+              .toList(),
+          profiles: history.snapshot.profiles,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('历史记录')),
+      body: FutureBuilder<List<_HistoryRoomData>>(
+        future: _historyFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return _ErrorCard(
+              message: snapshot.error.toString(),
+              onRetry: () => setState(_reload),
+            );
+          }
+          final history = snapshot.data ?? const <_HistoryRoomData>[];
+          if (history.isEmpty) {
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                children: const [
+                  SizedBox(height: 120),
+                  Icon(Icons.history_rounded, size: 56),
+                  SizedBox(height: 12),
+                  Center(child: Text('还没有历史牌局')),
+                ],
+              ),
+            );
+          }
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              itemCount: history.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final roomHistory = history[index];
+                return Card(
+                  elevation: 0,
+                  child: ExpansionTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.groups_rounded),
+                    ),
+                    title: Text(roomHistory.room.name),
+                    subtitle: Text('${roomHistory.sessions.length} 场牌局'),
+                    children: [
+                      for (final session in roomHistory.sessions)
+                        ListTile(
+                          title: Text(session.name),
+                          subtitle: Text(
+                            '${_activeRoundCount(roomHistory.snapshot, session)} 局有效记录 · ${_sessionStatusLabel(session.status)}',
+                          ),
+                          trailing: Text(
+                            _formatHistoryDate(_sessionDate(session)),
+                          ),
+                          onTap: () => _openSettlement(roomHistory, session),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RoomHistoryPage extends StatelessWidget {
+  const _RoomHistoryPage({required this.snapshot});
+
+  final RemoteRoomSnapshot snapshot;
+
+  Future<void> _openSettlement(
+    BuildContext context,
+    GameSession session,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _SettlementPage(
+          room: snapshot.room,
+          session: session,
+          rounds: snapshot.rounds
+              .where((round) => round.sessionId == session.id)
+              .toList(),
+          profiles: snapshot.profiles,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = [
+      ...snapshot.sessions,
+    ]..sort((left, right) => _sessionDate(right).compareTo(_sessionDate(left)));
+    return Scaffold(
+      appBar: AppBar(title: Text('${snapshot.room.name} · 历史')),
+      body: sessions.isEmpty
+          ? const Center(child: Text('还没有历史牌局'))
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              itemCount: sessions.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final session = sessions[index];
+                final rounds =
+                    snapshot.rounds
+                        .where((round) => round.sessionId == session.id)
+                        .toList()
+                      ..sort(
+                        (left, right) => right.number.compareTo(left.number),
+                      );
+                return Card(
+                  elevation: 0,
+                  child: ExpansionTile(
+                    title: Text(session.name),
+                    subtitle: Text(
+                      '${_activeRoundCount(snapshot, session)} 局有效记录 · ${_sessionStatusLabel(session.status)}',
+                    ),
+                    trailing: Text(_formatHistoryDate(_sessionDate(session))),
+                    children: [
+                      if (rounds.isEmpty)
+                        const ListTile(title: Text('还没有回合记录'))
+                      else
+                        for (final round in rounds)
+                          ListTile(
+                            leading: CircleAvatar(
+                              child: Text('${round.number}'),
+                            ),
+                            title: Text(
+                              round.isDeleted
+                                  ? '第 ${round.number} 局（已撤销）'
+                                  : round.changes
+                                        .map(
+                                          (change) =>
+                                              '${_profileName(change.playerId, snapshot.profiles)} ${change.value > 0 ? '+' : ''}${change.value}',
+                                        )
+                                        .join('，'),
+                            ),
+                            subtitle: round.note == null || round.note!.isEmpty
+                                ? null
+                                : Text(round.note!),
+                          ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: TextButton.icon(
+                            onPressed: () => _openSettlement(context, session),
+                            icon: const Icon(Icons.emoji_events_rounded),
+                            label: const Text('查看结算'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _HistoryRoomData {
+  const _HistoryRoomData({
+    required this.room,
+    required this.snapshot,
+    required this.sessions,
+  });
+
+  final Room room;
+  final RemoteRoomSnapshot snapshot;
+  final List<GameSession> sessions;
+
+  DateTime get latestDate => _sessionDate(sessions.first);
+}
+
+int _activeRoundCount(RemoteRoomSnapshot snapshot, GameSession session) {
+  return snapshot.rounds
+      .where((round) => round.sessionId == session.id && !round.isDeleted)
+      .length;
+}
+
+DateTime _sessionDate(GameSession session) {
+  return session.finishedAt ?? session.startedAt ?? session.createdAt;
+}
+
+String _sessionStatusLabel(GameSessionStatus status) {
+  return switch (status) {
+    GameSessionStatus.draft => '未开始',
+    GameSessionStatus.active => '进行中',
+    GameSessionStatus.finished => '已结束',
+  };
+}
+
+String _formatHistoryDate(DateTime value) {
+  final date = value.toLocal();
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  final hour = date.hour.toString().padLeft(2, '0');
+  final minute = date.minute.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day $hour:$minute';
+}
+
+class _ScoreTransfer {
+  const _ScoreTransfer({
+    required this.fromPlayerId,
+    required this.toPlayerId,
+    required this.amount,
+  });
+
+  final String fromPlayerId;
+  final String toPlayerId;
+  final int amount;
+}
+
+class _ScoreTransferDialog extends StatefulWidget {
+  const _ScoreTransferDialog({
+    required this.members,
+    required this.profiles,
+    required this.totals,
+    required this.scoringMode,
+    this.initialFromPlayerId,
+  });
+
+  final List<RoomMember> members;
+  final Map<String, User> profiles;
+  final Map<String, int> totals;
+  final ScoringMode scoringMode;
+  final String? initialFromPlayerId;
+
+  @override
+  State<_ScoreTransferDialog> createState() => _ScoreTransferDialogState();
+}
+
+class _ScoreTransferDialogState extends State<_ScoreTransferDialog> {
+  late final List<RoomMember> _members = widget.members
+      .where((member) => member.isActive)
+      .toList();
+  final _amountController = TextEditingController();
+  String? _fromPlayerId;
+  String? _toPlayerId;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_members.any((member) => member.userId == widget.initialFromPlayerId)) {
+      _fromPlayerId = widget.initialFromPlayerId;
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final amount = int.tryParse(_amountController.text.trim());
+    if (_fromPlayerId == null || _toPlayerId == null) {
+      setState(() => _error = '请选择转出方和接收方');
+      return;
+    }
+    if (_fromPlayerId == _toPlayerId) {
+      setState(() => _error = '转出方和接收方不能是同一人');
+      return;
+    }
+    if (amount == null || amount <= 0) {
+      setState(() => _error = '请输入大于 0 的$_unitLabel');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _ScoreTransfer(
+        fromPlayerId: _fromPlayerId!,
+        toPlayerId: _toPlayerId!,
+        amount: amount,
+      ),
+    );
+  }
+
+  String get _unitLabel =>
+      widget.scoringMode == ScoringMode.money ? '金额' : '积分';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('$_unitLabel转换'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('从一名成员转给另一名成员，并记录为当前牌局的一局变化。'),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: _fromPlayerId,
+              decoration: InputDecoration(labelText: '转出方'),
+              items: [
+                for (final member in _members)
+                  DropdownMenuItem(
+                    value: member.userId,
+                    child: Text(_memberLabel(member, widget.profiles)),
+                  ),
+              ],
+              onChanged: (value) => setState(() {
+                _fromPlayerId = value;
+                _error = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _toPlayerId,
+              decoration: InputDecoration(labelText: '接收方'),
+              items: [
+                for (final member in _members)
+                  DropdownMenuItem(
+                    value: member.userId,
+                    child: Text(_memberLabel(member, widget.profiles)),
+                  ),
+              ],
+              onChanged: (value) => setState(() {
+                _toPlayerId = value;
+                _error = null;
+              }),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _amountController,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: _unitLabel,
+                suffixText: _fromPlayerId == null
+                    ? null
+                    : '当前 ${widget.totals[_fromPlayerId!] ?? 0}',
+              ),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('确认转换')),
+      ],
+    );
+  }
+}
+
+class _RoomMemberScoreTile extends StatelessWidget {
+  const _RoomMemberScoreTile({
+    required this.member,
+    required this.profile,
+    required this.score,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final RoomMember member;
+  final User? profile;
+  final int score;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = profile?.nickname ?? _shortId(member.userId);
+    final initial = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 76,
+        child: Column(
+          children: [
+            CircleAvatar(radius: 26, child: Text(initial)),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              '$score',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: score < 0
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundHistoryDialog extends StatelessWidget {
+  const _RoundHistoryDialog({
+    required this.session,
+    required this.rounds,
+    required this.profiles,
+    required this.currentUserId,
+    required this.canEdit,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onRestore,
+  });
+
+  final GameSession session;
+  final List<Round> rounds;
+  final Map<String, User> profiles;
+  final String? currentUserId;
+  final bool canEdit;
+  final Future<void> Function(Round round) onEdit;
+  final Future<void> Function(Round round) onDelete;
+  final Future<void> Function(Round round) onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${session.name} · 回合记录'),
+      content: SizedBox(
+        width: 560,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+          ),
+          child: rounds.isEmpty
+              ? const Text('还没有回合记录')
+              : ListView.separated(
+                  itemCount: rounds.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final round = rounds[index];
+                    final changes = round.changes
+                        .map(
+                          (change) =>
+                              '${_profileName(change.playerId, profiles)} ${change.value > 0 ? '+' : ''}${change.value}',
+                        )
+                        .join('，');
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(child: Text('${round.number}')),
+                      title: Text(
+                        round.isDeleted ? '第 ${round.number} 局（已撤销）' : changes,
+                        style: TextStyle(
+                          decoration: round.isDeleted
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                      subtitle: round.note == null || round.note!.isEmpty
+                          ? null
+                          : Text(round.note!),
+                      trailing:
+                          canEdit &&
+                              round.createdBy == currentUserId &&
+                              (!round.isDeleted || round.changes.isNotEmpty)
+                          ? PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  onEdit(round);
+                                } else if (value == 'delete') {
+                                  onDelete(round);
+                                } else if (value == 'restore') {
+                                  onRestore(round);
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                if (!round.isDeleted)
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('编辑'),
+                                  ),
+                                if (!round.isDeleted)
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('撤销'),
+                                  ),
+                                if (round.isDeleted && round.changes.isNotEmpty)
+                                  const PopupMenuItem(
+                                    value: 'restore',
+                                    child: Text('恢复'),
+                                  ),
+                              ],
+                            )
+                          : null,
+                    );
+                  },
+                ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomManagementDialog extends StatelessWidget {
+  const _RoomManagementDialog({
+    required this.room,
+    required this.profiles,
+    required this.currentUserId,
+    required this.onPermissionChanged,
+    required this.onRemoveMember,
+    required this.onTransferOwnership,
+    required this.onLeaveRoom,
+  });
+
+  final Room room;
+  final Map<String, User> profiles;
+  final String? currentUserId;
+  final Future<void> Function(InputPermission permission) onPermissionChanged;
+  final Future<void> Function(String userId) onRemoveMember;
+  final Future<void> Function(String userId) onTransferOwnership;
+  final Future<void> Function() onLeaveRoom;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOwner = room.ownerId == currentUserId;
+    final activeMembers = room.members
+        .where((member) => member.isActive)
+        .toList();
+    return AlertDialog(
+      title: const Text('房间管理'),
+      content: SizedBox(
+        width: 560,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${activeMembers.length} 位成员 · ${room.gameType}'),
+            const SizedBox(height: 12),
+            if (isOwner)
+              DropdownButtonFormField<InputPermission>(
+                initialValue: room.inputPermission,
+                decoration: const InputDecoration(labelText: '记分录入权限'),
+                items: const [
+                  DropdownMenuItem(
+                    value: InputPermission.all,
+                    child: Text('所有成员可录入'),
+                  ),
+                  DropdownMenuItem(
+                    value: InputPermission.ownerOnly,
+                    child: Text('仅房主可录入'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null && value != room.inputPermission) {
+                    onPermissionChanged(value);
+                  }
+                },
+              ),
+            const SizedBox(height: 12),
+            const Text('成员', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: activeMembers
+                      .map<Widget>(
+                        (member) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            child: Text(
+                              _initialFor(
+                                _profileName(member.userId, profiles),
+                              ),
+                            ),
+                          ),
+                          title: Text(_profileName(member.userId, profiles)),
+                          subtitle: Text(
+                            member.userId == room.ownerId ? '房主' : '成员',
+                          ),
+                          trailing: isOwner && member.userId != room.ownerId
+                              ? PopupMenuButton<String>(
+                                  onSelected: (value) {
+                                    if (value == 'transfer') {
+                                      onTransferOwnership(member.userId);
+                                    } else if (value == 'remove') {
+                                      onRemoveMember(member.userId);
+                                    }
+                                  },
+                                  itemBuilder: (context) => const [
+                                    PopupMenuItem(
+                                      value: 'transfer',
+                                      child: Text('转让房主'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'remove',
+                                      child: Text('移除成员'),
+                                    ),
+                                  ],
+                                )
+                              : null,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        if (!isOwner)
+          TextButton(onPressed: onLeaveRoom, child: const Text('离开房间')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SettlementPage extends StatefulWidget {
+  const _SettlementPage({
+    required this.room,
+    required this.session,
+    required this.rounds,
+    required this.profiles,
+  });
+
+  final Room room;
+  final GameSession session;
+  final List<Round> rounds;
+  final Map<String, User> profiles;
+
+  @override
+  State<_SettlementPage> createState() => _SettlementPageState();
+}
+
+class _SettlementPageState extends State<_SettlementPage> {
+  final _shareCardKey = GlobalKey();
+
+  Room get room => widget.room;
+  GameSession get session => widget.session;
+  List<Round> get rounds => widget.rounds;
+  Map<String, User> get profiles => widget.profiles;
+
+  String _summaryText(
+    SettlementResult result,
+    List<MapEntry<String, int>> ranking,
+    String unit,
+  ) {
+    final lines = <String>['${session.name} · 结算', '累计排名：'];
+    for (var index = 0; index < ranking.length; index++) {
+      final entry = ranking[index];
+      lines.add(
+        '${index + 1}. ${_profileName(entry.key, profiles)} ${entry.value > 0 ? '+' : ''}${entry.value} $unit',
+      );
+    }
+    if (!result.isBalanced) {
+      lines.add('金额差额：${result.unbalancedAmount}');
+    } else if (result.transfers.isNotEmpty) {
+      lines.add('转账：');
+      for (final transfer in result.transfers) {
+        lines.add(
+          '${_profileName(transfer.fromPlayerId, profiles)} → ${_profileName(transfer.toPlayerId, profiles)} ${transfer.amount} $unit',
+        );
+      }
+    } else {
+      lines.add('当前没有需要转账的差额。');
+    }
+    return lines.join('\n');
+  }
+
+  Future<void> _shareSummary(String summary) async {
+    try {
+      await SharePlus.instance.share(
+        ShareParams(text: summary, subject: '${session.name} · 结算'),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _shareImage(String summary) async {
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final renderObject = _shareCardKey.currentContext?.findRenderObject();
+      if (renderObject is! RenderRepaintBoundary) {
+        throw StateError('结算卡片尚未准备好，请稍后再试');
+      }
+      final image = await renderObject.toImage(pixelRatio: 3);
+      try {
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData == null) throw StateError('结算图片生成失败');
+        await SharePlus.instance.share(
+          ShareParams(
+            text: summary,
+            subject: '${session.name} · 结算',
+            files: [
+              XFile.fromData(
+                byteData.buffer.asUint8List(),
+                mimeType: 'image/png',
+                name: 'paizhang-settlement.png',
+              ),
+            ],
+            fileNameOverrides: const ['paizhang-settlement.png'],
+          ),
+        );
+      } finally {
+        image.dispose();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = const SettlementCalculator().calculate(
+      rounds,
+      room.scoringMode,
+    );
+    final totals = <String, int>{
+      for (final member in room.members.where((member) => member.isActive))
+        member.userId: result.totals[member.userId] ?? 0,
+    };
+    final ranking = totals.entries.toList()
+      ..sort((left, right) => right.value.compareTo(left.value));
+    final unit = _scoreUnitLabel(room.scoringMode);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${session.name} · 结算'),
+        actions: [
+          IconButton(
+            tooltip: '系统分享',
+            icon: const Icon(Icons.share_rounded),
+            onPressed: () => _shareSummary(_summaryText(result, ranking, unit)),
+          ),
+          IconButton(
+            tooltip: '复制结算',
+            icon: const Icon(Icons.copy_rounded),
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: _summaryText(result, ranking, unit)),
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('结算摘要已复制')));
+              }
+            },
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: RepaintBoundary(
+          key: _shareCardKey,
+          child: Container(
+            color: Theme.of(context).colorScheme.surface,
+            padding: const EdgeInsets.all(4),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${session.name} · 结算',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  elevation: 0,
+                  child: ListTile(
+                    leading: const Icon(Icons.emoji_events_rounded),
+                    title: Text(
+                      '${rounds.where((round) => !round.isDeleted).length} 局有效记录',
+                    ),
+                    subtitle: Text(
+                      room.scoringMode == ScoringMode.money ? '金额结算' : '积分结算',
+                    ),
+                  ),
+                ),
+                if (!result.isBalanced) ...[
+                  const SizedBox(height: 12),
+                  Card(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    elevation: 0,
+                    child: ListTile(
+                      leading: const Icon(Icons.warning_amber_rounded),
+                      title: const Text('暂不能完成金额结算'),
+                      subtitle: Text(
+                        '当前差额：${result.unbalancedAmount}，请先修正回合记录。',
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                const Text(
+                  '累计排名',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                for (var index = 0; index < ranking.length; index++)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(child: Text('${index + 1}')),
+                    title: Text(_profileName(ranking[index].key, profiles)),
+                    trailing: Text(
+                      '${ranking[index].value > 0 ? '+' : ''}${ranking[index].value} $unit',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                if (result.isBalanced && result.transfers.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  const Text(
+                    '最少转账路径',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final transfer in result.transfers)
+                    Card(
+                      elevation: 0,
+                      child: ListTile(
+                        leading: const Icon(Icons.arrow_forward_rounded),
+                        title: Text(
+                          '${_profileName(transfer.fromPlayerId, profiles)} → ${_profileName(transfer.toPlayerId, profiles)}',
+                        ),
+                        trailing: Text('${transfer.amount} $unit'),
+                      ),
+                    ),
+                ],
+                if (result.isBalanced && result.transfers.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 20),
+                    child: Text('当前没有需要转账的差额。'),
+                  ),
+                const SizedBox(height: 20),
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      _shareImage(_summaryText(result, ranking, unit)),
+                  icon: const Icon(Icons.image_rounded),
+                  label: const Text('分享结算图片'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Map<String, int> _scoreTotalsForSession(
+  Iterable<Round> rounds,
+  String sessionId,
+) {
+  final totals = <String, int>{};
+  for (final round in rounds) {
+    if (round.sessionId != sessionId || round.isDeleted) continue;
+    for (final change in round.changes) {
+      totals.update(
+        change.playerId,
+        (value) => value + change.value,
+        ifAbsent: () => change.value,
+      );
+    }
+  }
+  return totals;
+}
+
+String _memberLabel(RoomMember member, Map<String, User> profiles) {
+  return profiles[member.userId]?.nickname ?? '玩家 ${_shortId(member.userId)}';
+}
+
+String _scoreUnitLabel(ScoringMode mode) {
+  return mode == ScoringMode.money ? '金额' : '积分';
+}
+
+int _sumChanges(Iterable<ScoreChange> changes) {
+  return changes.fold<int>(0, (sum, change) => sum + change.value);
+}
+
+String _profileName(String userId, Map<String, User> profiles) {
+  return profiles[userId]?.nickname ?? '玩家 ${_shortId(userId)}';
+}
+
+String _initialFor(String value) {
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? '?' : trimmed.substring(0, 1).toUpperCase();
 }
 
 class _ConnectedActionButton extends StatelessWidget {
@@ -943,12 +2721,20 @@ class _SessionCard extends StatelessWidget {
     required this.roundCount,
     required this.onRecord,
     required this.onFinish,
+    required this.onHistory,
+    required this.onSettlement,
+    required this.canRecord,
+    required this.canManage,
   });
 
   final GameSession session;
   final int roundCount;
   final VoidCallback onRecord;
   final VoidCallback onFinish;
+  final VoidCallback onHistory;
+  final VoidCallback onSettlement;
+  final bool canRecord;
+  final bool canManage;
 
   @override
   Widget build(BuildContext context) {
@@ -972,20 +2758,40 @@ class _SessionCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text('$roundCount 局'),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onHistory,
+                    icon: const Icon(Icons.history_rounded),
+                    label: const Text('回合记录'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onSettlement,
+                    icon: const Icon(Icons.receipt_long_rounded),
+                    label: const Text('看结算'),
+                  ),
+                ),
+              ],
+            ),
             if (session.status == GameSessionStatus.active) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onRecord,
+                      onPressed: canRecord ? onRecord : null,
                       child: const Text('录入一局'),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextButton(
-                      onPressed: onFinish,
+                      onPressed: canManage ? onFinish : null,
                       child: const Text('结束牌局'),
                     ),
                   ),
@@ -1114,6 +2920,17 @@ class _JoinRoomDialog extends StatefulWidget {
 class _JoinRoomDialogState extends State<_JoinRoomDialog> {
   final _codeController = TextEditingController();
 
+  Future<void> _scanInvite() async {
+    final scannedValue = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _InviteScannerPage()),
+    );
+    if (!mounted || scannedValue == null) return;
+    _codeController
+      ..text = scannedValue
+      ..selection = TextSelection.collapsed(offset: scannedValue.length);
+    setState(() {});
+  }
+
   @override
   void dispose() {
     _codeController.dispose();
@@ -1124,10 +2941,24 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('加入房间'),
-      content: TextField(
-        controller: _codeController,
-        textCapitalization: TextCapitalization.characters,
-        decoration: const InputDecoration(labelText: '邀请码'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _codeController,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(labelText: '邀请码或分享链接'),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _scanInvite,
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+              label: const Text('扫码'),
+            ),
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -1139,6 +2970,82 @@ class _JoinRoomDialogState extends State<_JoinRoomDialog> {
           child: const Text('加入'),
         ),
       ],
+    );
+  }
+}
+
+class _InviteScannerPage extends StatefulWidget {
+  const _InviteScannerPage();
+
+  @override
+  State<_InviteScannerPage> createState() => _InviteScannerPageState();
+}
+
+class _InviteScannerPageState extends State<_InviteScannerPage> {
+  String? _errorMessage;
+  String? _lastScannedValue;
+  bool _isClosing = false;
+
+  void _handleDetection(BarcodeCapture capture) {
+    if (_isClosing) return;
+    for (final barcode in capture.barcodes) {
+      final rawValue = barcode.rawValue?.trim();
+      if (rawValue == null ||
+          rawValue.isEmpty ||
+          rawValue == _lastScannedValue) {
+        continue;
+      }
+      _lastScannedValue = rawValue;
+      final token = const InviteService().extractToken(rawValue);
+      if (token == null) {
+        if (mounted) {
+          setState(() => _errorMessage = '二维码不是有效的牌账邀请链接');
+        }
+        return;
+      }
+      _isClosing = true;
+      Navigator.of(context).pop(rawValue);
+      return;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('扫描邀请二维码')),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          MobileScanner(onDetect: _handleDetection),
+          Center(
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 3),
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+          ),
+          if (_errorMessage != null)
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 32,
+              child: Card(
+                color: Colors.black87,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1190,9 +3097,15 @@ class _TextInputDialogState extends State<_TextInputDialog> {
 }
 
 class _ScoreDialog extends StatefulWidget {
-  const _ScoreDialog({required this.members});
+  const _ScoreDialog({
+    required this.members,
+    this.initialChanges = const [],
+    this.title = '录入一局分数',
+  });
 
   final List<RoomMember> members;
+  final List<ScoreChange> initialChanges;
+  final String title;
 
   @override
   State<_ScoreDialog> createState() => _ScoreDialogState();
@@ -1201,8 +3114,17 @@ class _ScoreDialog extends StatefulWidget {
 class _ScoreDialogState extends State<_ScoreDialog> {
   late final Map<String, TextEditingController> _controllers = {
     for (final member in widget.members.where((member) => member.isActive))
-      member.userId: TextEditingController(),
+      member.userId: TextEditingController(
+        text: _initialValue(member.userId)?.toString() ?? '',
+      ),
   };
+
+  int? _initialValue(String playerId) {
+    for (final change in widget.initialChanges) {
+      if (change.playerId == playerId) return change.value;
+    }
+    return null;
+  }
 
   @override
   void dispose() {
@@ -1226,7 +3148,7 @@ class _ScoreDialogState extends State<_ScoreDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('录入一局分数'),
+      title: Text(widget.title),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
