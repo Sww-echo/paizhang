@@ -276,3 +276,31 @@
 ### Next Steps
 
 - 配置 Java/Android 构建环境后完成真机扫码、深链、过期/撤销和登录后加入验收；随后进入历史与系统分享阶段
+
+
+## Session 9: 验证邀请闭环构建结果
+<!-- trellis-session: v=2 fp=dbb909345d679589 -->
+
+**Date**: 2026-10-02
+**Task**: 验证邀请闭环构建结果
+**Branch**: `main`
+
+### Summary
+
+完成邀请闭环代码回归：Flutter Web 构建成功，静态分析、21 项测试、格式和差异检查通过。Android APK 构建仍受当前环境缺少 Java Runtime 阻塞，Phase 1 代码实现完成但真机/真实后端验收待补。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过；flutter test 21 项通过；flutter build web 成功；dart format 检查通过；git diff --check 通过；flutter build apk --debug 因缺少 Java Runtime 失败
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 配置 Java/Android 构建环境，完成 Android 真机扫码、Web/自定义协议深链、过期/撤销和登录后加入验收；验收通过后进入个人/房间历史与系统分享
