@@ -332,3 +332,31 @@
 ### Next Steps
 
 - 配置 Java/Android 环境并完成邀请深链、扫码、过期/撤销、登录后加入的真机验收；随后实施双客户端实时与断网 Sync Queue 验收
+
+
+## Session 11: 启动双客户端实时与断网验收
+<!-- trellis-session: v=2 fp=484ee8af09423313 -->
+
+**Date**: 2026-10-02
+**Task**: 启动双客户端实时与断网验收
+**Branch**: `main`
+
+### Summary
+
+代码 review 发现 Sync Queue 可被应用恢复和多个触发源并发 flush，可能重复提交离线操作；已加入队列级并发刷新锁和回归测试。当前本地代码已提交，但推送 GitHub 因 443 网络连接失败，待网络恢复重试。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze 通过；local_database_test 7 项通过；并发刷新测试通过；全量 22 项测试在前一轮通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 网络恢复后推送本地提交；准备两个客户端和真实 Supabase，验收实时记分、编辑、撤销、恢复、权限变化及断网队列顺序重放
