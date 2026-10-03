@@ -360,3 +360,35 @@
 ### Next Steps
 
 - 网络恢复后推送本地提交；准备两个客户端和真实 Supabase，验收实时记分、编辑、撤销、恢复、权限变化及断网队列顺序重放
+
+
+## Session 12: 牌账代码 review 与交互优化
+<!-- trellis-session: v=2 fp=ac0c2ce8a6710a9d -->
+
+**Date**: 2026-10-03
+**Task**: 牌账代码 review 与交互优化
+**Branch**: `main`
+
+### Summary
+
+完成牌账核心代码第二轮 review。批量化房间快照查询，收敛 Realtime 关联刷新和生命周期竞态，修复头像资料覆盖、头像文件清理与局部缓存旧分数问题，补齐预设头像、评分输入校验、备注、提交确认和成功反馈。
+
+### Main Changes
+
+- 优化 lib/infrastructure/backend/supabase_room_repository.dart、room_sync_coordinator.dart、supabase_sync.dart、local_room_cache.dart、connected_app.dart 和 auth service。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze；flutter test（25 项）；flutter build web；git diff --check。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 将 supabase/migrations/20261002120000_interaction_completion.sql 应用到真实 Supabase，执行双客户端投票、Realtime、离开/移除历史和头像同步验收。
