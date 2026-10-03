@@ -4,7 +4,7 @@ Flutter 客户端，使用 Supabase Auth、PostgreSQL、Realtime 和 Drift 本�
 
 ## 本地开发
 
-未提供 Supabase 配置时，应用和测试仍可启动；接入真实 Supabase 时传入：
+未提供 Supabase 配置时，测试仍可启动，Web 会显示配置提示页，不会伪装成可操作的静态房间数据。接入真实 Supabase 时传入：
 
 ```bash
 flutter run \
