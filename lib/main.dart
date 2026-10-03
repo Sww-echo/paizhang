@@ -100,7 +100,7 @@ class SupabaseSetupPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     const SelectableText(
-                      'flutter run -d web-server \\\n+  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \\\n+  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key>',
+                      'flutter run -d web-server \\\n  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \\\n  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key>',
                       style: TextStyle(fontFamily: 'monospace'),
                     ),
                   ],
