@@ -51,6 +51,17 @@ class SupabaseAuthRepository {
     );
   }
 
+  Future<UserResponse> updateAvatar({String? avatarKey, String? avatarUrl}) {
+    return client.auth.updateUser(
+      UserAttributes(
+        data: {
+          'avatar_key': avatarKey?.trim(),
+          'avatar_url': avatarUrl?.trim(),
+        },
+      ),
+    );
+  }
+
   Future<void> signOut() => client.auth.signOut();
 
   User? get currentUser => client.auth.currentUser;

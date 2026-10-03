@@ -61,6 +61,7 @@ class AppServices {
 
   RoomSyncCoordinator createRoomSyncCoordinator({
     required Future<void> Function(RemoteRoomSnapshot snapshot) onRefresh,
+    Future<void> Function(Object error)? onError,
   }) {
     final repository = rooms;
     final realtimeClient = realtime;
@@ -72,6 +73,7 @@ class AppServices {
       realtime: realtimeClient,
       cache: cache,
       onRefresh: onRefresh,
+      onError: onError,
     );
   }
 

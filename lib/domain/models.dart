@@ -14,14 +14,59 @@ class User {
   const User({
     required this.id,
     required this.nickname,
+    this.avatarKey,
+    this.avatarUrl,
     this.phone,
     this.email,
   });
 
   final String id;
   final String nickname;
+  final String? avatarKey;
+  final String? avatarUrl;
   final String? phone;
   final String? email;
+}
+
+class RoomCloseVoteSummary {
+  const RoomCloseVoteSummary({
+    required this.activeMemberCount,
+    required this.approvedCount,
+    this.currentUserApproved,
+    this.proposalId,
+    this.targetStatus = RoomStatus.archived,
+    this.expiresAt,
+    this.createdBy,
+  });
+
+  final int activeMemberCount;
+  final int approvedCount;
+  final bool? currentUserApproved;
+  final String? proposalId;
+  final RoomStatus targetStatus;
+  final DateTime? expiresAt;
+  final String? createdBy;
+
+  bool get isPassed => approvedCount * 2 > activeMemberCount;
+
+  RoomCloseVoteSummary copyWith({
+    int? activeMemberCount,
+    int? approvedCount,
+    bool? currentUserApproved,
+    bool clearCurrentUserApproved = false,
+  }) {
+    return RoomCloseVoteSummary(
+      activeMemberCount: activeMemberCount ?? this.activeMemberCount,
+      approvedCount: approvedCount ?? this.approvedCount,
+      currentUserApproved: clearCurrentUserApproved
+          ? null
+          : (currentUserApproved ?? this.currentUserApproved),
+      proposalId: proposalId,
+      targetStatus: targetStatus,
+      expiresAt: expiresAt,
+      createdBy: createdBy,
+    );
+  }
 }
 
 class AuthChallenge {
@@ -102,6 +147,7 @@ class Room {
     required this.members,
     this.status = RoomStatus.waiting,
     this.inputPermission = InputPermission.all,
+    this.version = 1,
   });
 
   final String id;
@@ -113,6 +159,10 @@ class Room {
   final InputPermission inputPermission;
   final DateTime createdAt;
   final List<RoomMember> members;
+  final int version;
+
+  bool get isClosed =>
+      status == RoomStatus.archived || status == RoomStatus.dissolved;
 
   RoomMember? memberOf(String userId) {
     for (final member in members) {
@@ -138,6 +188,7 @@ class Room {
       inputPermission: inputPermission ?? this.inputPermission,
       createdAt: createdAt,
       members: List.unmodifiable(members ?? this.members),
+      version: version,
     );
   }
 }
@@ -177,6 +228,7 @@ class GameSession {
     this.startedAt,
     this.finishedAt,
     this.roundIds = const [],
+    this.version = 1,
   });
 
   final String id;
@@ -187,6 +239,7 @@ class GameSession {
   final DateTime? startedAt;
   final DateTime? finishedAt;
   final List<String> roundIds;
+  final int version;
 
   GameSession copyWith({
     GameSessionStatus? status,
@@ -203,6 +256,7 @@ class GameSession {
       startedAt: startedAt ?? this.startedAt,
       finishedAt: finishedAt ?? this.finishedAt,
       roundIds: List.unmodifiable(roundIds ?? this.roundIds),
+      version: version,
     );
   }
 }
@@ -224,6 +278,7 @@ class Round {
     required this.createdAt,
     this.note,
     this.deletedAt,
+    this.version = 1,
   });
 
   final String id;
@@ -234,6 +289,7 @@ class Round {
   final DateTime createdAt;
   final String? note;
   final DateTime? deletedAt;
+  final int version;
 
   bool get isDeleted => deletedAt != null;
 
@@ -252,6 +308,7 @@ class Round {
       createdAt: createdAt,
       note: note ?? this.note,
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
+      version: version,
     );
   }
 }

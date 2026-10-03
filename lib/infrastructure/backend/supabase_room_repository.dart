@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show SupabaseClient, FileOptions;
 
 import '../../domain/invite_service.dart';
 import '../../domain/models.dart';
@@ -42,12 +44,21 @@ class RemoteRoomSnapshot {
     required this.sessions,
     required this.rounds,
     this.profiles = const {},
+    this.closeVote,
   });
 
   final Room room;
   final List<GameSession> sessions;
   final List<Round> rounds;
   final Map<String, User> profiles;
+  final RoomCloseVoteSummary? closeVote;
+}
+
+class RemoteAvatarUpload {
+  const RemoteAvatarUpload({required this.key, required this.url});
+
+  final String key;
+  final String url;
 }
 
 class RoundWriteResult {
@@ -67,23 +78,61 @@ class SupabaseRoomRepository {
   Future<void> upsertProfile({
     required String userId,
     required String nickname,
+    String? avatarKey,
+    String? avatarUrl,
     String? phone,
     String? email,
   }) async {
     await client.from('profiles').upsert({
       'id': userId,
       'nickname': nickname.trim(),
+      'avatar_key': avatarKey,
+      'avatar_url': avatarUrl,
       'phone': phone,
       'email': email,
     });
   }
 
-  Future<void> ensureCurrentUserProfile({required String nickname}) async {
+  Future<void> ensureCurrentUserProfile({
+    required String nickname,
+    String? avatarKey,
+    String? avatarUrl,
+    bool clearAvatar = false,
+    bool replaceAvatar = false,
+  }) async {
     final user = client.auth.currentUser;
     if (user == null) throw const PaizhangException('请先登录');
+
+    Map<String, dynamic>? existingProfile;
+    if (!clearAvatar &&
+        !replaceAvatar &&
+        avatarKey == null &&
+        avatarUrl == null) {
+      existingProfile = await client
+          .from('profiles')
+          .select('avatar_key, avatar_url')
+          .eq('id', user.id)
+          .maybeSingle();
+    }
+    final metadataAvatarKey = user.userMetadata?['avatar_key'];
+    final metadataAvatarUrl = user.userMetadata?['avatar_url'];
     await upsertProfile(
       userId: user.id,
       nickname: nickname,
+      avatarKey: clearAvatar
+          ? null
+          : replaceAvatar
+          ? avatarKey
+          : avatarKey ??
+                (metadataAvatarKey is String ? metadataAvatarKey : null) ??
+                existingProfile?['avatar_key'] as String?,
+      avatarUrl: clearAvatar
+          ? null
+          : replaceAvatar
+          ? avatarUrl
+          : avatarUrl ??
+                (metadataAvatarUrl is String ? metadataAvatarUrl : null) ??
+                existingProfile?['avatar_url'] as String?,
       phone: user.phone,
       email: user.email,
     );
@@ -248,9 +297,9 @@ class SupabaseRoomRepository {
   Future<List<Room>> listMyRooms() async {
     final rows = await client
         .from('rooms')
-        .select('*, room_members!inner(*)')
-        .eq('room_members.user_id', _requireUserId())
-        .isFilter('room_members.left_at', null)
+        .select('*, room_members(*), mine:room_members!inner(user_id, left_at)')
+        .eq('mine.user_id', _requireUserId())
+        .isFilter('mine.left_at', null)
         .order('updated_at', ascending: false);
     return rows.map<Room>(_roomFromRow).toList();
   }
@@ -258,16 +307,17 @@ class SupabaseRoomRepository {
   Future<RemoteRoomSnapshot> getRoomSnapshot(String roomId) async {
     final room = await getRoom(roomId);
     final sessions = await listGameSessions(roomId);
-    final rounds = <Round>[];
-    for (final session in sessions) {
-      rounds.addAll(await listRounds(session.id));
-    }
+    final rounds = await listRoundsForSessions(
+      sessions.map((session) => session.id),
+    );
     final profiles = await _listMemberProfiles(room.members);
+    final closeVote = await getCloseVote(room);
     return RemoteRoomSnapshot(
       room: room,
       sessions: List.unmodifiable(sessions),
       rounds: List.unmodifiable(rounds),
       profiles: Map.unmodifiable(profiles),
+      closeVote: closeVote,
     );
   }
 
@@ -278,15 +328,15 @@ class SupabaseRoomRepository {
     if (userIds.isEmpty) return {};
     final rows = await client
         .from('profiles')
-        .select('id, nickname, phone, email')
+        .select('id, nickname, avatar_key, avatar_url')
         .inFilter('id', userIds);
     return {
       for (final row in rows)
         row['id'] as String: User(
           id: row['id'] as String,
           nickname: row['nickname'] as String,
-          phone: row['phone'] as String?,
-          email: row['email'] as String?,
+          avatarKey: row['avatar_key'] as String?,
+          avatarUrl: row['avatar_url'] as String?,
         ),
     };
   }
@@ -295,38 +345,195 @@ class SupabaseRoomRepository {
     required String roomId,
     required String name,
   }) async {
+    final sessionId = await client.rpc(
+      'create_game_draft',
+      params: {'target_room_id': roomId, 'p_name': name.trim()},
+    );
+    return _getGameSession(sessionId as String);
+  }
+
+  Future<GameSession> startGameSession(
+    String sessionId, {
+    int? expectedVersion,
+  }) async {
+    await manageGameSession(
+      sessionId,
+      'start',
+      expectedVersion: expectedVersion,
+    );
+    return _getGameSession(sessionId);
+  }
+
+  Future<GameSession> finishGameSession(
+    String sessionId, {
+    int? expectedVersion,
+  }) async {
+    await manageGameSession(
+      sessionId,
+      'finish',
+      expectedVersion: expectedVersion,
+    );
+    return _getGameSession(sessionId);
+  }
+
+  Future<void> manageGameSession(
+    String sessionId,
+    String action, {
+    String? name,
+    int? expectedVersion,
+  }) async {
+    await client.rpc(
+      'manage_game_session',
+      params: {
+        'p_session_id': sessionId,
+        'p_action': action,
+        'p_name': name,
+        'p_expected_version': expectedVersion,
+      },
+    );
+  }
+
+  Future<GameSession> _getGameSession(String sessionId) async {
     final row = await client
         .from('game_sessions')
-        .insert({'room_id': roomId, 'name': name.trim(), 'status': 'draft'})
         .select()
+        .eq('id', sessionId)
         .single();
     return _gameSessionFromRow(row);
   }
 
-  Future<GameSession> startGameSession(String sessionId) async {
-    final row = await client
-        .from('game_sessions')
-        .update({
-          'status': 'active',
-          'started_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('id', sessionId)
-        .select()
-        .single();
-    return _gameSessionFromRow(row);
+  Future<void> updateRoomDetails(
+    Room room, {
+    required String name,
+    required String gameType,
+    required ScoringMode scoringMode,
+  }) async {
+    await client.rpc(
+      'update_room_details',
+      params: {
+        'target_room_id': room.id,
+        'p_name': name.trim(),
+        'p_game_type': gameType.trim(),
+        'p_scoring_mode': scoringMode.name,
+        'p_expected_version': room.version,
+      },
+    );
   }
 
-  Future<GameSession> finishGameSession(String sessionId) async {
-    final row = await client
-        .from('game_sessions')
-        .update({
-          'status': 'finished',
-          'finished_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('id', sessionId)
-        .select()
-        .single();
-    return _gameSessionFromRow(row);
+  Future<RoomCloseVoteSummary?> getCloseVote(Room room) async {
+    final proposals = await client
+        .from('room_close_proposals')
+        .select('*, room_close_votes(*)')
+        .eq('room_id', room.id)
+        .eq('status', room.isClosed ? 'passed' : 'pending')
+        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(1);
+    if (proposals.isEmpty) {
+      return null;
+    }
+    final proposal = proposals.first;
+    final votes = (proposal['room_close_votes'] as List)
+        .cast<Map<String, dynamic>>();
+    final mine = votes.where((vote) => vote['user_id'] == _requireUserId());
+    return RoomCloseVoteSummary(
+      activeMemberCount: room.members.where((member) => member.isActive).length,
+      approvedCount: votes.where((vote) => vote['approved'] == true).length,
+      currentUserApproved: mine.isEmpty
+          ? null
+          : mine.first['approved'] as bool?,
+      proposalId: proposal['id'] as String,
+      targetStatus: RoomStatus.values.byName(
+        proposal['target_status'] as String,
+      ),
+      expiresAt: DateTime.parse(proposal['expires_at'] as String).toLocal(),
+      createdBy: proposal['created_by'] as String,
+    );
+  }
+
+  Future<void> castCloseVote(
+    Room room,
+    bool approved, {
+    RoomCloseVoteSummary? vote,
+    RoomStatus targetStatus = RoomStatus.archived,
+  }) async {
+    await client.rpc(
+      'cast_room_close_vote',
+      params: {
+        'target_room_id': room.id,
+        'p_approved': approved,
+        'p_target_status':
+            (vote?.proposalId != null ? vote!.targetStatus : targetStatus).name,
+        'p_proposal_id': vote?.proposalId,
+      },
+    );
+  }
+
+  Future<void> cancelCloseVote(Room room, String proposalId) async {
+    await client.rpc(
+      'cancel_room_close_vote',
+      params: {'target_room_id': room.id, 'p_proposal_id': proposalId},
+    );
+  }
+
+  Future<List<RemoteRoomSnapshot>> listMyHistory() async {
+    final rows = await client.rpc('get_my_room_history') as List;
+    return rows.map((item) {
+      final row = item as Map<String, dynamic>;
+      final profiles = (row['profiles'] as List).cast<Map<String, dynamic>>();
+      return RemoteRoomSnapshot(
+        room: _roomFromRow(row['room'] as Map<String, dynamic>),
+        sessions: (row['sessions'] as List)
+            .cast<Map<String, dynamic>>()
+            .map(_gameSessionFromRow)
+            .toList(),
+        rounds: (row['rounds'] as List)
+            .cast<Map<String, dynamic>>()
+            .map(_roundFromRow)
+            .toList(),
+        profiles: {
+          for (final profile in profiles)
+            profile['id'] as String: User(
+              id: profile['id'] as String,
+              nickname: profile['nickname'] as String,
+              avatarKey: profile['avatar_key'] as String?,
+              avatarUrl: profile['avatar_url'] as String?,
+            ),
+        },
+      );
+    }).toList();
+  }
+
+  Future<RemoteAvatarUpload> uploadAvatar(
+    Uint8List bytes,
+    String extension,
+  ) async {
+    if (!{'jpg', 'jpeg', 'png', 'webp'}.contains(extension) ||
+        bytes.length > 2 * 1024 * 1024 ||
+        bytes.isEmpty) {
+      throw const PaizhangException('请选择 2MB 以内的 JPG、PNG 或 WebP 图片');
+    }
+    final path = '${_requireUserId()}/${_randomUuid()}.$extension';
+    await client.storage
+        .from('avatars')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: extension == 'jpg' ? 'image/jpeg' : 'image/$extension',
+          ),
+        );
+    return RemoteAvatarUpload(
+      key: path,
+      url: client.storage.from('avatars').getPublicUrl(path),
+    );
+  }
+
+  Future<void> removeAvatarFile(String? key) async {
+    if (key == null || key.startsWith('preset:')) return;
+    final userId = _requireUserId();
+    if (!key.startsWith('$userId/')) return;
+    await client.storage.from('avatars').remove([key]);
   }
 
   Future<List<GameSession>> listGameSessions(String roomId) async {
@@ -527,11 +734,27 @@ class SupabaseRoomRepository {
   }
 
   Future<List<Round>> listRounds(String sessionId) async {
-    final rows = await client
-        .from('rounds')
-        .select('*, score_changes(*)')
-        .eq('session_id', sessionId)
-        .order('round_number');
+    return listRoundsForSessions([sessionId]);
+  }
+
+  Future<List<Round>> listRoundsForSessions(Iterable<String> sessionIds) async {
+    final ids = sessionIds.toSet().toList();
+    if (ids.isEmpty) return const [];
+    const pageSize = 500;
+    final rows = <Map<String, dynamic>>[];
+    var offset = 0;
+    while (true) {
+      final page = await client
+          .from('rounds')
+          .select('*, score_changes(*)')
+          .inFilter('session_id', ids)
+          .order('round_number')
+          .range(offset, offset + pageSize - 1);
+      final typedPage = page.cast<Map<String, dynamic>>();
+      rows.addAll(typedPage);
+      if (typedPage.length < pageSize) break;
+      offset += pageSize;
+    }
     return rows.map<Round>(_roundFromRow).toList();
   }
 
@@ -588,6 +811,7 @@ class SupabaseRoomRepository {
       ),
       createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
       members: List.unmodifiable(members),
+      version: (row['version'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -622,6 +846,7 @@ class SupabaseRoomRepository {
       finishedAt: row['finished_at'] == null
           ? null
           : DateTime.parse(row['finished_at'] as String).toLocal(),
+      version: (row['version'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -646,6 +871,7 @@ class SupabaseRoomRepository {
       deletedAt: row['deleted_at'] == null
           ? null
           : DateTime.parse(row['deleted_at'] as String).toLocal(),
+      version: (row['version'] as num?)?.toInt() ?? 1,
     );
   }
 

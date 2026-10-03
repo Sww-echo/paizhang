@@ -111,6 +111,9 @@ class LocalRoomCache {
   Future<void> saveRound(Round round) async {
     final now = DateTime.now().toUtc();
     await database.transaction(() async {
+      await (database.delete(
+        database.cachedScoreChanges,
+      )..where((change) => change.roundId.equals(round.id))).go();
       await database
           .into(database.cachedRounds)
           .insertOnConflictUpdate(

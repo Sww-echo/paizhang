@@ -23,8 +23,10 @@ class SupabaseSync {
 
   Stream<RemoteChange> get changes => _changes.stream;
 
-  void subscribeToRoom(String roomId) {
-    _channel?.unsubscribe();
+  Future<void> subscribeToRoom(String roomId) async {
+    final previousChannel = _channel;
+    _channel = null;
+    await previousChannel?.unsubscribe();
     _channel = client
         .channel('room:$roomId')
         .onPostgresChanges(
@@ -72,6 +74,29 @@ class SupabaseSync {
           table: 'score_changes',
           callback: (payload) => _emit('score_changes', payload),
         )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'room_close_proposals',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'room_id',
+            value: roomId,
+          ),
+          callback: (payload) => _emit('room_close_proposals', payload),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'room_close_votes',
+          callback: (payload) => _emit('room_close_votes', payload),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'profiles',
+          callback: (payload) => _emit('profiles', payload),
+        )
         .subscribe();
   }
 
@@ -81,8 +106,9 @@ class SupabaseSync {
   }
 
   Future<void> unsubscribe() async {
-    await _channel?.unsubscribe();
+    final channel = _channel;
     _channel = null;
+    await channel?.unsubscribe();
   }
 
   void _emit(String table, PostgresChangePayload payload) {

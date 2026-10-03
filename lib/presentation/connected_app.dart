@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -153,6 +154,8 @@ class _SignInPageState extends State<SignInPage> {
   bool _codeRequested = false;
   bool _busy = false;
   String? _message;
+  Timer? _resendTimer;
+  int _resendSeconds = 0;
 
   @override
   void initState() {
@@ -169,21 +172,50 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     _identifierController.dispose();
     _codeController.dispose();
     _nicknameController.dispose();
     super.dispose();
   }
 
-  Future<void> _requestCode() async {
+  Future<void> _requestCode({bool resend = false}) async {
     await _run(() async {
       final identifier = _identifierController.text.trim();
       await widget.services.auth!.requestCode(identifier);
       if (!mounted) return;
       setState(() {
         _codeRequested = true;
-        _message = '验证码已发送，请检查邮箱或短信';
+        _message = resend ? '新的验证码已发送，请使用最新验证码' : '验证码已发送，请检查邮箱或短信';
       });
+      _startResendTimer();
+    });
+  }
+
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = 60);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendSeconds <= 1) {
+        timer.cancel();
+        setState(() => _resendSeconds = 0);
+      } else {
+        setState(() => _resendSeconds -= 1);
+      }
+    });
+  }
+
+  void _changeIdentifier() {
+    _resendTimer?.cancel();
+    setState(() {
+      _codeRequested = false;
+      _resendSeconds = 0;
+      _codeController.clear();
+      _message = null;
     });
   }
 
@@ -249,6 +281,7 @@ class _SignInPageState extends State<SignInPage> {
                       const SizedBox(height: 24),
                       TextField(
                         controller: _identifierController,
+                        readOnly: _codeRequested,
                         keyboardType: TextInputType.emailAddress,
                         decoration: const InputDecoration(
                           labelText: '邮箱或手机号',
@@ -264,6 +297,25 @@ class _SignInPageState extends State<SignInPage> {
                             labelText: '验证码',
                             border: OutlineInputBorder(),
                           ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton(
+                              onPressed: _busy ? null : _changeIdentifier,
+                              child: const Text('修改账号'),
+                            ),
+                            TextButton(
+                              onPressed: _busy || _resendSeconds > 0
+                                  ? null
+                                  : () => _requestCode(resend: true),
+                              child: Text(
+                                _resendSeconds > 0
+                                    ? '重新发送（$_resendSeconds）'
+                                    : '重新发送',
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 12),
                         TextField(
@@ -419,7 +471,7 @@ class _ConnectedHomeShellState extends State<ConnectedHomeShell>
   }
 }
 
-class ConnectedHomePage extends StatelessWidget {
+class ConnectedHomePage extends StatefulWidget {
   const ConnectedHomePage({
     required this.services,
     required this.onMessage,
@@ -431,65 +483,82 @@ class ConnectedHomePage extends StatelessWidget {
   final ValueChanged<String> onMessage;
   final VoidCallback onRoomsChanged;
 
+  @override
+  State<ConnectedHomePage> createState() => _ConnectedHomePageState();
+}
+
+class _ConnectedHomePageState extends State<ConnectedHomePage> {
+  bool _busy = false;
+
   Future<void> _createRoom(BuildContext context) async {
+    if (_busy) return;
     final values = await showDialog<_RoomFormValue>(
       context: context,
       builder: (context) => const _RoomFormDialog(),
     );
     if (values == null || !context.mounted) return;
+    setState(() => _busy = true);
     try {
-      final room = await services.rooms!.createRoom(
+      final room = await widget.services.rooms!.createRoom(
         name: values.name,
         gameType: values.gameType,
         scoringMode: values.scoringMode,
       );
-      onRoomsChanged();
+      widget.onRoomsChanged();
       if (!context.mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ConnectedRoomPage(services: services, room: room),
+          builder: (_) =>
+              ConnectedRoomPage(services: widget.services, room: room),
         ),
       );
     } catch (error) {
-      onMessage(error.toString());
+      widget.onMessage(error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _joinRoom(BuildContext context) async {
+    if (_busy) return;
     final input = await showDialog<String>(
       context: context,
       builder: (context) => const _JoinRoomDialog(),
     );
     if (input == null || !context.mounted) return;
+    setState(() => _busy = true);
     try {
       final token = const InviteService().extractToken(input);
       final roomId = token == null
-          ? await services.rooms!.joinByCode(input)
-          : await services.rooms!.joinByToken(token);
-      final room = await services.rooms!.getRoom(roomId);
-      onRoomsChanged();
+          ? await widget.services.rooms!.joinByCode(input)
+          : await widget.services.rooms!.joinByToken(token);
+      final room = await widget.services.rooms!.getRoom(roomId);
+      widget.onRoomsChanged();
       if (!context.mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ConnectedRoomPage(services: services, room: room),
+          builder: (_) =>
+              ConnectedRoomPage(services: widget.services, room: room),
         ),
       );
     } catch (error) {
-      onMessage(error.toString());
+      widget.onMessage(error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _openHistory(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ConnectedHistoryPage(services: services),
+        builder: (_) => ConnectedHistoryPage(services: widget.services),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = services.client!.auth.currentUser;
+    final user = widget.services.client!.auth.currentUser;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
       children: [
@@ -510,7 +579,7 @@ class ConnectedHomePage extends StatelessWidget {
                 icon: Icons.add_rounded,
                 label: '创建房间',
                 primary: true,
-                onPressed: () => _createRoom(context),
+                onPressed: _busy ? null : () => _createRoom(context),
               ),
             ),
             const SizedBox(width: 12),
@@ -518,7 +587,7 @@ class ConnectedHomePage extends StatelessWidget {
               child: _ConnectedActionButton(
                 icon: Icons.login_rounded,
                 label: '加入房间',
-                onPressed: () => _joinRoom(context),
+                onPressed: _busy ? null : () => _joinRoom(context),
               ),
             ),
           ],
@@ -564,6 +633,7 @@ class ConnectedRoomsPage extends StatefulWidget {
 
 class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
   late Future<List<Room>> _roomsFuture;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -585,11 +655,14 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
   }
 
   Future<void> _createRoom() async {
+    if (_busy) return;
     final values = await showDialog<_RoomFormValue>(
       context: context,
       builder: (context) => const _RoomFormDialog(),
     );
     if (values == null) return;
+    if (!mounted) return;
+    setState(() => _busy = true);
     try {
       final room = await widget.services.rooms!.createRoom(
         name: values.name,
@@ -607,15 +680,20 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
       if (mounted) setState(_reload);
     } catch (error) {
       widget.onMessage(error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _joinRoom() async {
+    if (_busy) return;
     final input = await showDialog<String>(
       context: context,
       builder: (context) => const _JoinRoomDialog(),
     );
     if (input == null) return;
+    if (!mounted) return;
+    setState(() => _busy = true);
     try {
       final token = const InviteService().extractToken(input);
       final roomId = token == null
@@ -633,6 +711,8 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
       if (mounted) setState(_reload);
     } catch (error) {
       widget.onMessage(error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -660,7 +740,7 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
                         icon: Icons.add_rounded,
                         label: '创建房间',
                         primary: true,
-                        onPressed: _createRoom,
+                        onPressed: _busy ? null : _createRoom,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -668,7 +748,7 @@ class _ConnectedRoomsPageState extends State<ConnectedRoomsPage> {
                       child: _ConnectedActionButton(
                         icon: Icons.login_rounded,
                         label: '加入房间',
-                        onPressed: _joinRoom,
+                        onPressed: _busy ? null : _joinRoom,
                       ),
                     ),
                   ],
@@ -748,6 +828,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
   late Future<RemoteRoomSnapshot> _snapshotFuture;
   late final RoomSyncCoordinator _sync;
   String? _selectedSessionId;
+  bool _actionBusy = false;
 
   @override
   void initState() {
@@ -758,6 +839,9 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         if (!mounted) return;
         setState(() => _snapshotFuture = Future.value(snapshot));
       },
+      onError: (error) async {
+        _handleSyncError(error);
+      },
     );
     unawaited(_startSync());
   }
@@ -766,7 +850,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     try {
       await _sync.start(widget.room.id);
     } catch (error) {
-      _showError(error);
+      _handleSyncError(error);
     }
   }
 
@@ -803,14 +887,34 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
   }
 
   bool _canInputRoom(Room room) {
-    if (room.inputPermission == InputPermission.all) return true;
     final currentUserId = widget.services.client?.auth.currentUser?.id;
-    return currentUserId != null && currentUserId == room.ownerId;
+    if (currentUserId == null ||
+        !room.hasActiveMember(currentUserId) ||
+        room.isClosed) {
+      return false;
+    }
+    if (room.inputPermission == InputPermission.all) return true;
+    return currentUserId == room.ownerId;
   }
 
   bool _isRoomOwner(Room room) {
     final currentUserId = widget.services.client?.auth.currentUser?.id;
-    return currentUserId != null && currentUserId == room.ownerId;
+    return currentUserId != null &&
+        room.hasActiveMember(currentUserId) &&
+        !room.isClosed &&
+        currentUserId == room.ownerId;
+  }
+
+  Future<void> _runRoomAction(Future<void> Function() action) async {
+    if (!mounted || _actionBusy) return;
+    setState(() => _actionBusy = true);
+    try {
+      await action();
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
   }
 
   bool _canEditRound(RemoteRoomSnapshot snapshot, Round round) {
@@ -838,6 +942,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
           sessions: snapshot.sessions,
           rounds: List.unmodifiable(rounds),
           profiles: snapshot.profiles,
+          closeVote: snapshot.closeVote,
         ),
       );
     });
@@ -850,6 +955,8 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
   }
 
   Future<void> _createInvite() async {
+    if (_actionBusy) return;
+    setState(() => _actionBusy = true);
     try {
       final snapshot = await _snapshotFuture;
       if (!_isRoomOwner(snapshot.room)) {
@@ -926,10 +1033,13 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       );
     } catch (error) {
       _showError(error);
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
     }
   }
 
   Future<void> _createSession(RemoteRoomSnapshot snapshot) async {
+    if (_actionBusy) return;
     if (!_isRoomOwner(snapshot.room)) {
       _showError('只有房主可以创建牌局');
       return;
@@ -943,16 +1053,127 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       ),
     );
     if (name == null) return;
+    setState(() => _actionBusy = true);
     try {
-      final session = await widget.services.rooms!.createGameSession(
+      await widget.services.rooms!.createGameSession(
         roomId: snapshot.room.id,
         name: name,
       );
-      await widget.services.rooms!.startGameSession(session.id);
       _reloadSnapshot();
     } catch (error) {
       _showError(error);
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
     }
+  }
+
+  Future<void> _startSession(GameSession session) async {
+    await _runRoomAction(() async {
+      final snapshot = await _snapshotFuture;
+      if (!_isRoomOwner(snapshot.room)) {
+        throw const PaizhangException('只有房主可以开始牌局');
+      }
+      await widget.services.rooms!.startGameSession(
+        session.id,
+        expectedVersion: session.version,
+      );
+      _reloadSnapshot();
+    });
+  }
+
+  Future<void> _deleteDraftSession(GameSession session) async {
+    final confirmed = await _confirmAction(
+      title: '删除草稿牌局？',
+      message: '删除后不会产生任何记分记录，且无法恢复。',
+      confirmLabel: '删除',
+    );
+    if (!confirmed) return;
+    await _runRoomAction(() async {
+      final snapshot = await _snapshotFuture;
+      if (!_isRoomOwner(snapshot.room)) {
+        throw const PaizhangException('只有房主可以删除草稿牌局');
+      }
+      await widget.services.rooms!.manageGameSession(session.id, 'delete');
+      _reloadSnapshot();
+    });
+  }
+
+  Future<void> _renameSession(GameSession session) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => _TextInputDialog(
+        title: '重命名牌局',
+        label: '牌局名称',
+        confirmLabel: '保存',
+        initialValue: session.name,
+      ),
+    );
+    if (name == null) return;
+    await _runRoomAction(() async {
+      final snapshot = await _snapshotFuture;
+      if (!_isRoomOwner(snapshot.room)) {
+        throw const PaizhangException('只有房主可以重命名牌局');
+      }
+      await widget.services.rooms!.manageGameSession(
+        session.id,
+        'rename',
+        name: name,
+        expectedVersion: session.version,
+      );
+      _reloadSnapshot();
+    });
+  }
+
+  Future<void> _reopenSession(GameSession session) async {
+    final confirmed = await _confirmAction(
+      title: '重新打开牌局？',
+      message: '重新打开后可以继续修正或录入回合。',
+      confirmLabel: '重新打开',
+    );
+    if (!confirmed) return;
+    await _runRoomAction(() async {
+      final snapshot = await _snapshotFuture;
+      if (!_isRoomOwner(snapshot.room)) {
+        throw const PaizhangException('只有房主可以重新打开牌局');
+      }
+      await widget.services.rooms!.manageGameSession(
+        session.id,
+        'reopen',
+        expectedVersion: session.version,
+      );
+      _reloadSnapshot();
+    });
+  }
+
+  Future<_ScoreInput?> _showScoreInput(
+    RemoteRoomSnapshot snapshot, {
+    List<ScoreChange> initialChanges = const [],
+    String? initialNote,
+    String title = '录入一局分数',
+  }) async {
+    var currentChanges = initialChanges;
+    var currentNote = initialNote;
+    while (mounted) {
+      if (!mounted) return null;
+      final input = await showDialog<_ScoreInput>(
+        context: context,
+        builder: (context) => _ScoreDialog(
+          members: snapshot.room.members,
+          profiles: snapshot.profiles,
+          scoringMode: snapshot.room.scoringMode,
+          initialChanges: currentChanges,
+          initialNote: currentNote,
+          title: title,
+        ),
+      );
+      if (input == null) return null;
+      if (await _confirmRoundInput(snapshot, input.changes, input.note)) {
+        return input;
+      }
+      currentChanges = input.changes;
+      currentNote = input.note;
+    }
+    return null;
   }
 
   Future<void> _recordRound(
@@ -970,22 +1191,16 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     final existingRounds = snapshot.rounds
         .where((round) => round.sessionId == session.id)
         .toList();
-    final changes = await showDialog<List<ScoreChange>>(
-      context: context,
-      builder: (context) => _ScoreDialog(members: snapshot.room.members),
-    );
-    if (changes == null || changes.isEmpty) return;
-    if (snapshot.room.scoringMode == ScoringMode.money &&
-        _sumChanges(changes) != 0) {
-      _showError('金额模式每局必须平账，当前差额为 ${_sumChanges(changes)}');
-      return;
-    }
-    try {
+    final input = await _showScoreInput(snapshot);
+    if (input == null) return;
+    final changes = input.changes;
+    await _runRoomAction(() async {
       final result = await widget.services.rooms!.recordRoundWithQueue(
         queue: widget.services.queue,
         sessionId: session.id,
         roundNumber: existingRounds.length + 1,
         changes: changes,
+        note: input.note,
       );
       if (result.queued) {
         await widget.services.cache.saveRound(result.round);
@@ -997,10 +1212,9 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         }
       } else {
         _reloadSnapshot();
+        _showSuccess('第 ${existingRounds.length + 1} 局已保存');
       }
-    } catch (error) {
-      _showError(error);
-    }
+    });
   }
 
   Future<void> _editRound(RemoteRoomSnapshot snapshot, Round round) async {
@@ -1008,28 +1222,22 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       _showError('当前牌局不允许修改回合');
       return;
     }
-    final changes = await showDialog<List<ScoreChange>>(
-      context: context,
-      builder: (context) => _ScoreDialog(
-        members: snapshot.room.members,
-        initialChanges: round.changes,
-        title: '编辑第 ${round.number} 局',
-      ),
+    final input = await _showScoreInput(
+      snapshot,
+      initialChanges: round.changes,
+      initialNote: round.note,
+      title: '编辑第 ${round.number} 局',
     );
-    if (changes == null || changes.isEmpty) return;
-    if (snapshot.room.scoringMode == ScoringMode.money &&
-        _sumChanges(changes) != 0) {
-      _showError('金额模式每局必须平账，当前差额为 ${_sumChanges(changes)}');
-      return;
-    }
-    try {
+    if (input == null) return;
+    final changes = input.changes;
+    await _runRoomAction(() async {
       final result = await widget.services.rooms!.updateRoundWithQueue(
         queue: widget.services.queue,
         sessionId: round.sessionId,
         roundNumber: round.number,
         roundId: round.id,
         changes: changes,
-        note: round.note,
+        note: input.note,
       );
       if (result.queued) {
         await widget.services.cache.saveRound(result.round);
@@ -1041,10 +1249,9 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         }
       } else {
         _reloadSnapshot();
+        _showSuccess('第 ${round.number} 局已更新');
       }
-    } catch (error) {
-      _showError(error);
-    }
+    });
   }
 
   Future<void> _deleteRound(RemoteRoomSnapshot snapshot, Round round) async {
@@ -1070,7 +1277,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       ),
     );
     if (confirmed != true) return;
-    try {
+    await _runRoomAction(() async {
       final result = await widget.services.rooms!.deleteRoundWithQueue(
         queue: widget.services.queue,
         round: round,
@@ -1082,9 +1289,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
           context,
         ).showSnackBar(const SnackBar(content: Text('当前网络不可用，撤销已保存，稍后自动同步')));
       }
-    } catch (error) {
-      _showError(error);
-    }
+    });
   }
 
   Future<void> _restoreRound(RemoteRoomSnapshot snapshot, Round round) async {
@@ -1096,7 +1301,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       _showError('该回合没有可恢复的分数记录');
       return;
     }
-    try {
+    await _runRoomAction(() async {
       final result = await widget.services.rooms!.updateRoundWithQueue(
         queue: widget.services.queue,
         sessionId: round.sessionId,
@@ -1112,9 +1317,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
           context,
         ).showSnackBar(const SnackBar(content: Text('当前网络不可用，恢复已保存，稍后自动同步')));
       }
-    } catch (error) {
-      _showError(error);
-    }
+    });
   }
 
   Future<void> _showRoundHistory(
@@ -1210,7 +1413,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     final existingRounds = snapshot.rounds
         .where((round) => round.sessionId == session.id)
         .toList();
-    try {
+    await _runRoomAction(() async {
       final result = await widget.services.rooms!.recordRoundWithQueue(
         queue: widget.services.queue,
         sessionId: session.id,
@@ -1231,10 +1434,9 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         }
       } else {
         _reloadSnapshot();
+        _showSuccess('积分转换已记录');
       }
-    } catch (error) {
-      _showError(error);
-    }
+    });
   }
 
   Future<void> _finishSession(
@@ -1245,12 +1447,63 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
       _showError('只有房主可以结束牌局');
       return;
     }
-    try {
-      await widget.services.rooms!.finishGameSession(session.id);
+    final confirmed = await _confirmAction(
+      title: '结束牌局？',
+      message: '结束后将不能继续录入，只有重新打开后才能修正。',
+      confirmLabel: '结束牌局',
+    );
+    if (!confirmed) return;
+    await _runRoomAction(() async {
+      await widget.services.rooms!.finishGameSession(
+        session.id,
+        expectedVersion: session.version,
+      );
       _reloadSnapshot();
-    } catch (error) {
-      _showError(error);
+    });
+  }
+
+  Future<void> _castCloseVote(
+    RemoteRoomSnapshot snapshot, {
+    required bool approved,
+    required RoomStatus targetStatus,
+  }) async {
+    if (snapshot.room.isClosed) return;
+    await _runRoomAction(() async {
+      await widget.services.rooms!.castCloseVote(
+        snapshot.room,
+        approved,
+        vote: snapshot.closeVote,
+        targetStatus: targetStatus,
+      );
+      _reloadSnapshot();
+    });
+  }
+
+  Future<void> _editRoomDetails(RemoteRoomSnapshot snapshot) async {
+    if (!_isRoomOwner(snapshot.room)) {
+      _showError('只有房主可以编辑房间');
+      return;
     }
+    final values = await showDialog<_RoomFormValue>(
+      context: context,
+      builder: (context) => _RoomFormDialog(
+        title: '编辑房间',
+        submitLabel: '保存',
+        initialName: snapshot.room.name,
+        initialGameType: snapshot.room.gameType,
+        initialScoringMode: snapshot.room.scoringMode,
+      ),
+    );
+    if (values == null) return;
+    await _runRoomAction(() async {
+      await widget.services.rooms!.updateRoomDetails(
+        snapshot.room,
+        name: values.name,
+        gameType: values.gameType,
+        scoringMode: values.scoringMode,
+      );
+      _reloadSnapshot();
+    });
   }
 
   Future<void> _showRoomManagement(RemoteRoomSnapshot snapshot) async {
@@ -1260,35 +1513,59 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
         room: snapshot.room,
         profiles: snapshot.profiles,
         currentUserId: widget.services.client?.auth.currentUser?.id,
+        closeVote: snapshot.closeVote,
+        hasActiveSession: snapshot.sessions.any(
+          (session) => session.status == GameSessionStatus.active,
+        ),
+        onEditRoom: () async {
+          Navigator.of(dialogContext).pop();
+          await _editRoomDetails(snapshot);
+        },
+        onCloseVote: (approved, targetStatus) async {
+          Navigator.of(dialogContext).pop();
+          await _castCloseVote(
+            snapshot,
+            approved: approved,
+            targetStatus: targetStatus,
+          );
+        },
+        onCancelCloseVote: () async {
+          final proposalId = snapshot.closeVote?.proposalId;
+          if (proposalId == null) return;
+          Navigator.of(dialogContext).pop();
+          await _runRoomAction(() async {
+            await widget.services.rooms!.cancelCloseVote(
+              snapshot.room,
+              proposalId,
+            );
+            _reloadSnapshot();
+          });
+        },
         onPermissionChanged: (permission) async {
           Navigator.of(dialogContext).pop();
-          try {
+          await _runRoomAction(() async {
             await widget.services.rooms!.setInputPermission(
               roomId: snapshot.room.id,
               permission: permission,
             );
             _reloadSnapshot();
-          } catch (error) {
-            _showError(error);
-          }
+          });
         },
         onRemoveMember: (userId) async {
           Navigator.of(dialogContext).pop();
           final confirmed = await _confirmAction(
             title: '移除成员？',
-            message: '移除后，该成员不能继续录入或查看这个房间。',
+            message: '移除后，该成员不能继续录入或管理，但仍可在历史记录查看离开前的牌局。',
             confirmLabel: '移除',
           );
           if (!confirmed) return;
-          try {
+          await _runRoomAction(() async {
             await widget.services.rooms!.removeMember(
               roomId: snapshot.room.id,
               userId: userId,
             );
             _reloadSnapshot();
-          } catch (error) {
-            _showError(error);
-          }
+          });
         },
         onTransferOwnership: (userId) async {
           Navigator.of(dialogContext).pop();
@@ -1298,15 +1575,13 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
             confirmLabel: '转让',
           );
           if (!confirmed) return;
-          try {
+          await _runRoomAction(() async {
             await widget.services.rooms!.transferOwnership(
               roomId: snapshot.room.id,
               userId: userId,
             );
             _reloadSnapshot();
-          } catch (error) {
-            _showError(error);
-          }
+          });
         },
         onLeaveRoom: () async {
           Navigator.of(dialogContext).pop();
@@ -1316,12 +1591,10 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
             confirmLabel: '离开',
           );
           if (!confirmed) return;
-          try {
+          await _runRoomAction(() async {
             await widget.services.rooms!.leaveRoom(snapshot.room.id);
             if (mounted) Navigator.of(context).pop();
-          } catch (error) {
-            _showError(error);
-          }
+          });
         },
       ),
     );
@@ -1354,12 +1627,99 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
 
   void _showError(Object error) {
     if (!mounted) return;
-    final rawMessage = error.toString();
-    final message = rawMessage.contains('money_round_unbalanced')
-        ? '金额模式每局必须平账'
-        : rawMessage;
+    final message = _friendlyErrorMessage(error);
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _handleSyncError(Object error) {
+    if (!mounted) return;
+    if (_isRoomAccessError(error)) {
+      setState(() {
+        _snapshotFuture = Future<RemoteRoomSnapshot>.error(error);
+      });
+      return;
+    }
+    _showError(error);
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<bool> _confirmRoundInput(
+    RemoteRoomSnapshot snapshot,
+    List<ScoreChange> changes,
+    String? note,
+  ) async {
+    final unit = _scoreUnitLabel(snapshot.room.scoringMode);
+    final summary = changes
+        .map(
+          (change) =>
+              '${_profileName(change.playerId, snapshot.profiles)} ${change.value > 0 ? '+' : ''}${change.value} $unit',
+        )
+        .join('\n');
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('确认提交'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(summary),
+                if (note != null && note.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('备注：$note'),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('返回修改'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('确认提交'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  bool _isRoomAccessError(Object error) {
+    final value = error.toString().toLowerCase();
+    return value.contains('room_member_required') ||
+        value.contains('room_not_found') ||
+        value.contains('permission denied') ||
+        value.contains('not found');
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final rawMessage = error.toString();
+    const messages = <String, String>{
+      'money_round_unbalanced': '金额模式每局必须平账',
+      'room_closed': '房间已关闭，当前只能查看历史和结算',
+      'active_session_exists': '仍有进行中的牌局，请先结束所有牌局',
+      'room_owner_required': '只有房主可以执行此操作',
+      'room_member_required': '你已不再是房间成员，当前仅可查看历史',
+      'version_conflict': '数据已被其他成员更新，请刷新后重试',
+      'vote_expired': '本轮关闭投票已失效，请重新发起',
+      'another_close_vote_pending': '已有另一种关闭方式的投票进行中',
+      'vote_not_started': '请先发起关闭投票',
+      'only_draft_can_delete': '只有草稿牌局可以删除',
+      'invalid_session_transition': '当前牌局状态不允许这个操作',
+      'session_finished': '牌局已结束，请先重新打开',
+      'round_write_forbidden': '当前牌局不允许写入回合',
+    };
+    for (final entry in messages.entries) {
+      if (rawMessage.contains(entry.key)) return entry.value;
+    }
+    return rawMessage;
   }
 
   @override
@@ -1407,6 +1767,12 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            if (_isRoomAccessError(snapshot.error!)) {
+              return _RoomAccessErrorCard(
+                message: _friendlyErrorMessage(snapshot.error!),
+                onBack: () => Navigator.of(context).pop(),
+              );
+            }
             return _ErrorCard(
               message: snapshot.error.toString(),
               onRetry: _reloadSnapshot,
@@ -1433,11 +1799,21 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                 elevation: 0,
                 child: ListTile(
                   leading: const Icon(Icons.groups_rounded),
-                  title: Text('${data.room.members.length} 位成员'),
+                  title: Text('${members.length} 位成员'),
                   subtitle: Text(data.room.gameType),
-                  trailing: Text(data.room.status.name),
+                  trailing: Text(_roomStatusLabel(data.room.status)),
                 ),
               ),
+              if (data.room.isClosed)
+                Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const ListTile(
+                    leading: Icon(Icons.lock_outline_rounded),
+                    title: Text('房间已关闭'),
+                    subtitle: Text('当前仅支持查看历史和结算，不能继续录入或管理。'),
+                  ),
+                ),
               const SizedBox(height: 20),
               const Text(
                 '成员分数',
@@ -1540,11 +1916,20 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                         .where((round) => round.sessionId == session.id)
                         .length,
                     onRecord: () => _recordRound(session, data),
+                    onStart: () => _startSession(session),
+                    onDelete: () => _deleteDraftSession(session),
+                    onRename: () => _renameSession(session),
+                    onReopen: () => _reopenSession(session),
                     onFinish: () => _finishSession(data, session),
                     onHistory: () => _showRoundHistory(data, session),
                     onSettlement: () => _showSettlement(data, session),
                     canRecord: canInput,
                     canManage: isOwner,
+                    readOnly:
+                        data.room.isClosed ||
+                        !data.room.hasActiveMember(
+                          widget.services.client?.auth.currentUser?.id ?? '',
+                        ),
                   ),
             ],
           );
@@ -1565,15 +1950,151 @@ class ConnectedProfilePage extends StatefulWidget {
 
 class _ConnectedProfilePageState extends State<ConnectedProfilePage> {
   late String _nickname;
+  String? _avatarKey;
+  String? _avatarUrl;
+  bool _avatarBusy = false;
 
   @override
   void initState() {
     super.initState();
     final user = widget.services.client!.auth.currentUser;
     _nickname = (user?.userMetadata?['nickname'] as String?)?.trim() ?? '';
+    _avatarKey = user?.userMetadata?['avatar_key'] as String?;
+    _avatarUrl = user?.userMetadata?['avatar_url'] as String?;
+  }
+
+  Future<void> _pickAvatar() async {
+    if (_avatarBusy) return;
+    setState(() => _avatarBusy = true);
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (image == null || !mounted) return;
+      final oldKey = _avatarKey;
+      var extension = image.name.split('.').last.toLowerCase();
+      if (extension == 'jpeg') extension = 'jpg';
+      if (!{'jpg', 'png', 'webp'}.contains(extension)) {
+        extension = switch (image.mimeType) {
+          'image/jpeg' => 'jpg',
+          'image/png' => 'png',
+          'image/webp' => 'webp',
+          _ => extension,
+        };
+      }
+      final upload = await widget.services.rooms!.uploadAvatar(
+        await image.readAsBytes(),
+        extension,
+      );
+      try {
+        await widget.services.auth!.updateAvatar(
+          avatarKey: upload.key,
+          avatarUrl: upload.url,
+          previousAvatarKey: oldKey,
+          previousAvatarUrl: _avatarUrl,
+        );
+      } catch (_) {
+        try {
+          await widget.services.rooms!.removeAvatarFile(upload.key);
+        } catch (_) {}
+        rethrow;
+      }
+      if (oldKey != null) {
+        try {
+          await widget.services.rooms!.removeAvatarFile(oldKey);
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _avatarKey = upload.key;
+          _avatarUrl = upload.url;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('头像已更新')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _avatarBusy = false);
+    }
+  }
+
+  Future<void> _selectPresetAvatar() async {
+    if (_avatarBusy) return;
+    final avatarKey = await showDialog<String>(
+      context: context,
+      builder: (context) => const _AvatarPresetDialog(),
+    );
+    if (avatarKey == null || !mounted) return;
+    setState(() => _avatarBusy = true);
+    final oldKey = _avatarKey;
+    try {
+      await widget.services.auth!.updateAvatar(
+        avatarKey: avatarKey,
+        previousAvatarKey: oldKey,
+        previousAvatarUrl: _avatarUrl,
+      );
+      if (oldKey != null) {
+        try {
+          await widget.services.rooms!.removeAvatarFile(oldKey);
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _avatarKey = avatarKey;
+          _avatarUrl = null;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('预设头像已更新')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _avatarBusy = false);
+    }
+  }
+
+  Future<void> _removeAvatar() async {
+    if (_avatarBusy || (_avatarKey == null && _avatarUrl == null)) return;
+    setState(() => _avatarBusy = true);
+    final oldKey = _avatarKey;
+    try {
+      await widget.services.auth!.clearAvatar(
+        previousAvatarKey: oldKey,
+        previousAvatarUrl: _avatarUrl,
+      );
+      try {
+        await widget.services.rooms!.removeAvatarFile(oldKey);
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _avatarKey = null;
+          _avatarUrl = null;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('头像已删除')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _avatarBusy = false);
+    }
   }
 
   Future<void> _editNickname() async {
+    if (_avatarBusy) return;
     final controller = TextEditingController(text: _nickname);
     final nickname = await showDialog<String>(
       context: context,
@@ -1599,6 +2120,8 @@ class _ConnectedProfilePageState extends State<ConnectedProfilePage> {
     );
     controller.dispose();
     if (nickname == null || nickname.trim().isEmpty) return;
+    if (!mounted) return;
+    setState(() => _avatarBusy = true);
     try {
       await widget.services.auth!.updateNickname(nickname: nickname.trim());
       if (mounted) setState(() => _nickname = nickname.trim());
@@ -1606,6 +2129,8 @@ class _ConnectedProfilePageState extends State<ConnectedProfilePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _avatarBusy = false);
     }
   }
 
@@ -1634,11 +2159,54 @@ class _ConnectedProfilePageState extends State<ConnectedProfilePage> {
         Card(
           elevation: 0,
           child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
+            leading: _UserAvatar(
+              name: displayName,
+              avatarKey: _avatarKey,
+              avatarUrl: _avatarUrl,
+              radius: 26,
+            ),
             title: Text(displayName),
             subtitle: Text(user?.email ?? user?.phone ?? ''),
             trailing: const Icon(Icons.edit_rounded),
             onTap: _editNickname,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          child: ListTile(
+            leading: const Icon(Icons.photo_camera_back_rounded),
+            title: const Text('头像'),
+            subtitle: Text(
+              _avatarKey == null && _avatarUrl == null
+                  ? '未设置头像'
+                  : '支持预设头像或图片头像',
+            ),
+            trailing: _avatarBusy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'preset') _selectPresetAvatar();
+                      if (value == 'pick') _pickAvatar();
+                      if (value == 'remove') _removeAvatar();
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'preset',
+                        child: Text('选择预设头像'),
+                      ),
+                      const PopupMenuItem(value: 'pick', child: Text('选择图片')),
+                      if (_avatarKey != null || _avatarUrl != null)
+                        const PopupMenuItem(
+                          value: 'remove',
+                          child: Text('删除头像'),
+                        ),
+                    ],
+                  ),
           ),
         ),
         const SizedBox(height: 20),
@@ -1686,10 +2254,11 @@ class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
   }
 
   Future<List<_HistoryRoomData>> _loadHistory() async {
-    final rooms = await widget.services.rooms!.listMyRooms();
+    final snapshots = await widget.services.rooms!.listMyHistory();
+    final currentUserId = widget.services.client?.auth.currentUser?.id;
     final history = <_HistoryRoomData>[];
-    for (final room in rooms) {
-      final snapshot = await widget.services.rooms!.getRoomSnapshot(room.id);
+    for (final snapshot in snapshots) {
+      final room = snapshot.room;
       final sessions =
           snapshot.sessions
               .where(
@@ -1708,6 +2277,7 @@ class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
             room: room,
             snapshot: snapshot,
             sessions: List.unmodifiable(sessions),
+            isCurrentMember: room.hasActiveMember(currentUserId ?? ''),
           ),
         );
       }
@@ -1787,7 +2357,10 @@ class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
                       child: Icon(Icons.groups_rounded),
                     ),
                     title: Text(roomHistory.room.name),
-                    subtitle: Text('${roomHistory.sessions.length} 场牌局'),
+                    subtitle: Text(
+                      '${roomHistory.sessions.length} 场牌局 · '
+                      '${roomHistory.isCurrentMember ? '当前成员' : '已离开/被移除'}',
+                    ),
                     children: [
                       for (final session in roomHistory.sessions)
                         ListTile(
@@ -1913,11 +2486,13 @@ class _HistoryRoomData {
     required this.room,
     required this.snapshot,
     required this.sessions,
+    required this.isCurrentMember,
   });
 
   final Room room;
   final RemoteRoomSnapshot snapshot;
   final List<GameSession> sessions;
+  final bool isCurrentMember;
 
   DateTime get latestDate => _sessionDate(sessions.first);
 }
@@ -1940,6 +2515,16 @@ String _sessionStatusLabel(GameSessionStatus status) {
   };
 }
 
+String _roomStatusLabel(RoomStatus status) {
+  return switch (status) {
+    RoomStatus.waiting => '等待中',
+    RoomStatus.active => '进行中',
+    RoomStatus.finished => '已结束',
+    RoomStatus.archived => '已归档',
+    RoomStatus.dissolved => '已解散',
+  };
+}
+
 String _formatHistoryDate(DateTime value) {
   final date = value.toLocal();
   final month = date.month.toString().padLeft(2, '0');
@@ -1959,6 +2544,13 @@ class _ScoreTransfer {
   final String fromPlayerId;
   final String toPlayerId;
   final int amount;
+}
+
+class _ScoreInput {
+  const _ScoreInput({required this.changes, this.note});
+
+  final List<ScoreChange> changes;
+  final String? note;
 }
 
 class _ScoreTransferDialog extends StatefulWidget {
@@ -2126,7 +2718,6 @@ class _RoomMemberScoreTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = profile?.nickname ?? _shortId(member.userId);
-    final initial = label.trim().isEmpty ? '?' : label.trim()[0].toUpperCase();
     return InkWell(
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(12),
@@ -2134,7 +2725,12 @@ class _RoomMemberScoreTile extends StatelessWidget {
         width: 76,
         child: Column(
           children: [
-            CircleAvatar(radius: 26, child: Text(initial)),
+            _UserAvatar(
+              name: label,
+              avatarKey: profile?.avatarKey,
+              avatarUrl: profile?.avatarUrl,
+              radius: 26,
+            ),
             const SizedBox(height: 6),
             Text(
               label,
@@ -2269,6 +2865,11 @@ class _RoomManagementDialog extends StatelessWidget {
     required this.room,
     required this.profiles,
     required this.currentUserId,
+    required this.closeVote,
+    required this.hasActiveSession,
+    required this.onEditRoom,
+    required this.onCloseVote,
+    required this.onCancelCloseVote,
     required this.onPermissionChanged,
     required this.onRemoveMember,
     required this.onTransferOwnership,
@@ -2278,6 +2879,12 @@ class _RoomManagementDialog extends StatelessWidget {
   final Room room;
   final Map<String, User> profiles;
   final String? currentUserId;
+  final RoomCloseVoteSummary? closeVote;
+  final bool hasActiveSession;
+  final Future<void> Function() onEditRoom;
+  final Future<void> Function(bool approved, RoomStatus targetStatus)
+  onCloseVote;
+  final Future<void> Function() onCancelCloseVote;
   final Future<void> Function(InputPermission permission) onPermissionChanged;
   final Future<void> Function(String userId) onRemoveMember;
   final Future<void> Function(String userId) onTransferOwnership;
@@ -2298,8 +2905,38 @@ class _RoomManagementDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('${activeMembers.length} 位成员 · ${room.gameType}'),
+            const SizedBox(height: 8),
+            Text(
+              room.isClosed
+                  ? '房间已${room.status == RoomStatus.dissolved ? '解散' : '归档'}，当前仅可查看历史和结算。'
+                  : '关闭房间需要有效成员投票，必须严格超过半数同意。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (isOwner && !room.isClosed) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: onEditRoom,
+                  icon: const Icon(Icons.edit_rounded, size: 18),
+                  label: const Text('编辑房间资料'),
+                ),
+              ),
+            ],
+            if (!room.isClosed) ...[
+              const SizedBox(height: 12),
+              _CloseVotePanel(
+                vote: closeVote,
+                currentUserId: currentUserId,
+                createdBy: closeVote?.createdBy,
+                hasActiveSession: hasActiveSession,
+                isOwner: isOwner,
+                onVote: onCloseVote,
+                onCancel: onCancelCloseVote,
+              ),
+            ],
             const SizedBox(height: 12),
-            if (isOwner)
+            if (isOwner && !room.isClosed)
               DropdownButtonFormField<InputPermission>(
                 initialValue: room.inputPermission,
                 decoration: const InputDecoration(labelText: '记分录入权限'),
@@ -2332,18 +2969,19 @@ class _RoomManagementDialog extends StatelessWidget {
                       .map<Widget>(
                         (member) => ListTile(
                           contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            child: Text(
-                              _initialFor(
-                                _profileName(member.userId, profiles),
-                              ),
-                            ),
+                          leading: _UserAvatar(
+                            name: _profileName(member.userId, profiles),
+                            avatarKey: profiles[member.userId]?.avatarKey,
+                            avatarUrl: profiles[member.userId]?.avatarUrl,
                           ),
                           title: Text(_profileName(member.userId, profiles)),
                           subtitle: Text(
                             member.userId == room.ownerId ? '房主' : '成员',
                           ),
-                          trailing: isOwner && member.userId != room.ownerId
+                          trailing:
+                              isOwner &&
+                                  !room.isClosed &&
+                                  member.userId != room.ownerId
                               ? PopupMenuButton<String>(
                                   onSelected: (value) {
                                     if (value == 'transfer') {
@@ -2374,13 +3012,113 @@ class _RoomManagementDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        if (!isOwner)
+        if (!isOwner && !room.isClosed)
           TextButton(onPressed: onLeaveRoom, child: const Text('离开房间')),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),
         ),
       ],
+    );
+  }
+}
+
+class _CloseVotePanel extends StatelessWidget {
+  const _CloseVotePanel({
+    required this.vote,
+    required this.currentUserId,
+    required this.createdBy,
+    required this.hasActiveSession,
+    required this.isOwner,
+    required this.onVote,
+    required this.onCancel,
+  });
+
+  final RoomCloseVoteSummary? vote;
+  final String? currentUserId;
+  final String? createdBy;
+  final bool hasActiveSession;
+  final bool isOwner;
+  final Future<void> Function(bool approved, RoomStatus targetStatus) onVote;
+  final Future<void> Function() onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final targetStatus = vote?.targetStatus ?? RoomStatus.archived;
+    final canVote = !hasActiveSession;
+    return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              vote == null ? '关闭房间' : '关闭投票进行中',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            if (hasActiveSession)
+              const Text('仍有进行中的牌局，请先结束所有牌局。')
+            else if (vote == null)
+              const Text('发起后，所有有效成员都需要投票；同意票必须严格超过半数。')
+            else ...[
+              Text(
+                '目标：${targetStatus == RoomStatus.dissolved ? '解散' : '归档'} · '
+                '${vote!.approvedCount}/${vote!.activeMemberCount} 票同意',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                vote!.currentUserApproved == null
+                    ? '你还没有投票'
+                    : vote!.currentUserApproved!
+                    ? '你已投同意票'
+                    : '你已投不同意票',
+              ),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (vote == null) ...[
+                  FilledButton.tonal(
+                    onPressed: canVote
+                        ? () => onVote(true, RoomStatus.archived)
+                        : null,
+                    child: const Text('发起归档投票'),
+                  ),
+                  OutlinedButton(
+                    onPressed: canVote
+                        ? () => onVote(true, RoomStatus.dissolved)
+                        : null,
+                    child: const Text('发起解散投票'),
+                  ),
+                ] else ...[
+                  FilledButton.tonal(
+                    onPressed: canVote
+                        ? () => onVote(true, targetStatus)
+                        : null,
+                    child: const Text('同意关闭'),
+                  ),
+                  OutlinedButton(
+                    onPressed: canVote
+                        ? () => onVote(false, targetStatus)
+                        : null,
+                    child: const Text('不同意'),
+                  ),
+                  if (isOwner || createdBy == currentUserId)
+                    TextButton(
+                      onPressed: onCancel,
+                      child: const Text('取消本轮投票'),
+                    ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2490,9 +3228,13 @@ class _SettlementPageState extends State<_SettlementPage> {
       rounds,
       room.scoringMode,
     );
+    final participantIds = <String>{
+      ...room.members.map((member) => member.userId),
+      ...result.totals.keys,
+    };
     final totals = <String, int>{
-      for (final member in room.members.where((member) => member.isActive))
-        member.userId: result.totals[member.userId] ?? 0,
+      for (final playerId in participantIds)
+        playerId: result.totals[playerId] ?? 0,
     };
     final ranking = totals.entries.toList()
       ..sort((left, right) => right.value.compareTo(left.value));
@@ -2577,7 +3319,19 @@ class _SettlementPageState extends State<_SettlementPage> {
                 for (var index = 0; index < ranking.length; index++)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(child: Text('${index + 1}')),
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(child: Text('${index + 1}')),
+                        const SizedBox(width: 8),
+                        _UserAvatar(
+                          name: _profileName(ranking[index].key, profiles),
+                          avatarKey: profiles[ranking[index].key]?.avatarKey,
+                          avatarUrl: profiles[ranking[index].key]?.avatarUrl,
+                          radius: 18,
+                        ),
+                      ],
+                    ),
                     title: Text(_profileName(ranking[index].key, profiles)),
                     trailing: Text(
                       '${ranking[index].value > 0 ? '+' : ''}${ranking[index].value} $unit',
@@ -2663,6 +3417,105 @@ String _initialFor(String value) {
   return trimmed.isEmpty ? '?' : trimmed.substring(0, 1).toUpperCase();
 }
 
+class _AvatarPreset {
+  const _AvatarPreset({
+    required this.key,
+    required this.emoji,
+    required this.color,
+  });
+
+  final String key;
+  final String emoji;
+  final Color color;
+}
+
+const _avatarPresets = <_AvatarPreset>[
+  _AvatarPreset(key: 'preset:leaf', emoji: '🍃', color: Color(0xFF2F7D68)),
+  _AvatarPreset(key: 'preset:sun', emoji: '☀️', color: Color(0xFFE29B2D)),
+  _AvatarPreset(key: 'preset:wave', emoji: '🌊', color: Color(0xFF3B82A0)),
+  _AvatarPreset(key: 'preset:star', emoji: '⭐', color: Color(0xFF7B61A8)),
+  _AvatarPreset(key: 'preset:fire', emoji: '🔥', color: Color(0xFFD65A43)),
+  _AvatarPreset(key: 'preset:moon', emoji: '🌙', color: Color(0xFF44546A)),
+];
+
+_AvatarPreset? _avatarPresetFor(String? key) {
+  for (final preset in _avatarPresets) {
+    if (preset.key == key) return preset;
+  }
+  return null;
+}
+
+class _AvatarPresetDialog extends StatelessWidget {
+  const _AvatarPresetDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('选择预设头像'),
+      content: Wrap(
+        spacing: 16,
+        runSpacing: 16,
+        children: [
+          for (final preset in _avatarPresets)
+            InkWell(
+              onTap: () => Navigator.pop(context, preset.key),
+              borderRadius: BorderRadius.circular(36),
+              child: CircleAvatar(
+                radius: 30,
+                backgroundColor: preset.color,
+                child: Text(preset.emoji, style: const TextStyle(fontSize: 25)),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
+}
+
+class _UserAvatar extends StatelessWidget {
+  const _UserAvatar({
+    required this.name,
+    this.avatarKey,
+    this.avatarUrl,
+    this.radius = 20,
+  });
+
+  final String name;
+  final String? avatarKey;
+  final String? avatarUrl;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = avatarUrl?.trim();
+    final preset = _avatarPresetFor(avatarKey);
+    final fallback = Text(
+      preset?.emoji ?? _initialFor(name),
+      style: preset == null ? null : const TextStyle(fontSize: 20),
+    );
+    final image = url == null || url.isEmpty
+        ? null
+        : Image.network(
+            url,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => fallback,
+          );
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: preset?.color,
+      child: image == null ? fallback : ClipOval(child: image),
+    );
+  }
+}
+
 class _ConnectedActionButton extends StatelessWidget {
   const _ConnectedActionButton({
     required this.icon,
@@ -2673,7 +3526,7 @@ class _ConnectedActionButton extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool primary;
 
   @override
@@ -2708,8 +3561,10 @@ class _ConnectedRoomTile extends StatelessWidget {
         onTap: onTap,
         leading: const CircleAvatar(child: Icon(Icons.groups_rounded)),
         title: Text(room.name),
-        subtitle: Text('${room.members.length} 位成员 · ${room.gameType}'),
-        trailing: Text(room.status.name),
+        subtitle: Text(
+          '${room.members.where((member) => member.isActive).length} 位成员 · ${room.gameType}',
+        ),
+        trailing: Text(_roomStatusLabel(room.status)),
       ),
     );
   }
@@ -2720,21 +3575,31 @@ class _SessionCard extends StatelessWidget {
     required this.session,
     required this.roundCount,
     required this.onRecord,
+    required this.onStart,
+    required this.onDelete,
+    required this.onRename,
+    required this.onReopen,
     required this.onFinish,
     required this.onHistory,
     required this.onSettlement,
     required this.canRecord,
     required this.canManage,
+    required this.readOnly,
   });
 
   final GameSession session;
   final int roundCount;
   final VoidCallback onRecord;
+  final VoidCallback onStart;
+  final VoidCallback onDelete;
+  final VoidCallback onRename;
+  final VoidCallback onReopen;
   final VoidCallback onFinish;
   final VoidCallback onHistory;
   final VoidCallback onSettlement;
   final bool canRecord;
   final bool canManage;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -2753,7 +3618,7 @@ class _SessionCard extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                Text(session.status.name),
+                Text(_sessionStatusLabel(session.status)),
               ],
             ),
             const SizedBox(height: 6),
@@ -2778,6 +3643,26 @@ class _SessionCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (session.status == GameSessionStatus.draft) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: canManage && !readOnly ? onStart : null,
+                      child: const Text('开始牌局'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: canManage && !readOnly ? onDelete : null,
+                      child: const Text('删除草稿'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (session.status == GameSessionStatus.active) ...[
               const SizedBox(height: 12),
               Row(
@@ -2791,11 +3676,42 @@ class _SessionCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextButton(
-                      onPressed: canManage ? onFinish : null,
+                      onPressed: canManage && !readOnly ? onFinish : null,
                       child: const Text('结束牌局'),
                     ),
                   ),
                 ],
+              ),
+            ],
+            if (session.status == GameSessionStatus.finished && canManage) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: readOnly ? null : onReopen,
+                      child: const Text('重新打开'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: readOnly ? null : onRename,
+                      child: const Text('重命名'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (session.status != GameSessionStatus.finished && canManage) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: readOnly ? null : onRename,
+                  icon: const Icon(Icons.edit_rounded, size: 18),
+                  label: const Text('重命名'),
+                ),
               ),
             ],
           ],
@@ -2828,6 +3744,43 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
+class _RoomAccessErrorCard extends StatelessWidget {
+  const _RoomAccessErrorCard({required this.message, required this.onBack});
+
+  final String message;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Card(
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline_rounded, size: 48),
+                const SizedBox(height: 12),
+                const Text(
+                  '房间访问已变化',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(message, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton(onPressed: onBack, child: const Text('返回')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RoomFormValue {
   const _RoomFormValue({
     required this.name,
@@ -2841,16 +3794,37 @@ class _RoomFormValue {
 }
 
 class _RoomFormDialog extends StatefulWidget {
-  const _RoomFormDialog();
+  const _RoomFormDialog({
+    this.title = '创建房间',
+    this.submitLabel = '创建',
+    this.initialName = '',
+    this.initialGameType = '掼蛋',
+    this.initialScoringMode = ScoringMode.points,
+  });
+
+  final String title;
+  final String submitLabel;
+  final String initialName;
+  final String initialGameType;
+  final ScoringMode initialScoringMode;
 
   @override
   State<_RoomFormDialog> createState() => _RoomFormDialogState();
 }
 
 class _RoomFormDialogState extends State<_RoomFormDialog> {
-  final _nameController = TextEditingController();
-  final _gameTypeController = TextEditingController(text: '掼蛋');
-  ScoringMode _scoringMode = ScoringMode.points;
+  late final TextEditingController _nameController;
+  late final TextEditingController _gameTypeController;
+  late ScoringMode _scoringMode;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _gameTypeController = TextEditingController(text: widget.initialGameType);
+    _scoringMode = widget.initialScoringMode;
+  }
 
   @override
   void dispose() {
@@ -2862,7 +3836,7 @@ class _RoomFormDialogState extends State<_RoomFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('创建房间'),
+      title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2885,6 +3859,16 @@ class _RoomFormDialogState extends State<_RoomFormDialog> {
               if (value != null) setState(() => _scoringMode = value);
             },
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ],
         ],
       ),
       actions: [
@@ -2894,16 +3878,22 @@ class _RoomFormDialogState extends State<_RoomFormDialog> {
         ),
         FilledButton(
           onPressed: () {
+            final name = _nameController.text.trim();
+            final gameType = _gameTypeController.text.trim();
+            if (name.isEmpty || gameType.isEmpty) {
+              setState(() => _error = '请填写房间名称和玩法');
+              return;
+            }
             Navigator.pop(
               context,
               _RoomFormValue(
-                name: _nameController.text,
-                gameType: _gameTypeController.text,
+                name: name,
+                gameType: gameType,
                 scoringMode: _scoringMode,
               ),
             );
           },
-          child: const Text('创建'),
+          child: Text(widget.submitLabel),
         ),
       ],
     );
@@ -3055,18 +4045,27 @@ class _TextInputDialog extends StatefulWidget {
     required this.title,
     required this.label,
     required this.confirmLabel,
+    this.initialValue = '',
   });
 
   final String title;
   final String label;
   final String confirmLabel;
+  final String initialValue;
 
   @override
   State<_TextInputDialog> createState() => _TextInputDialogState();
 }
 
 class _TextInputDialogState extends State<_TextInputDialog> {
-  final _controller = TextEditingController();
+  late final TextEditingController _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
 
   @override
   void dispose() {
@@ -3078,9 +4077,22 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: TextField(
-        controller: _controller,
-        decoration: InputDecoration(labelText: widget.label),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _controller,
+            decoration: InputDecoration(labelText: widget.label),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
       ),
       actions: [
         TextButton(
@@ -3088,7 +4100,14 @@ class _TextInputDialogState extends State<_TextInputDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _controller.text),
+          onPressed: () {
+            final value = _controller.text.trim();
+            if (value.isEmpty) {
+              setState(() => _error = '内容不能为空');
+              return;
+            }
+            Navigator.pop(context, value);
+          },
           child: Text(widget.confirmLabel),
         ),
       ],
@@ -3099,12 +4118,18 @@ class _TextInputDialogState extends State<_TextInputDialog> {
 class _ScoreDialog extends StatefulWidget {
   const _ScoreDialog({
     required this.members,
+    required this.profiles,
+    required this.scoringMode,
     this.initialChanges = const [],
+    this.initialNote,
     this.title = '录入一局分数',
   });
 
   final List<RoomMember> members;
+  final Map<String, User> profiles;
+  final ScoringMode scoringMode;
   final List<ScoreChange> initialChanges;
+  final String? initialNote;
   final String title;
 
   @override
@@ -3113,11 +4138,15 @@ class _ScoreDialog extends StatefulWidget {
 
 class _ScoreDialogState extends State<_ScoreDialog> {
   late final Map<String, TextEditingController> _controllers = {
-    for (final member in widget.members.where((member) => member.isActive))
+    for (final member in widget.members.where(_shouldShowMember))
       member.userId: TextEditingController(
         text: _initialValue(member.userId)?.toString() ?? '',
       ),
   };
+  late final TextEditingController _noteController = TextEditingController(
+    text: widget.initialNote ?? '',
+  );
+  String? _error;
 
   int? _initialValue(String playerId) {
     for (final change in widget.initialChanges) {
@@ -3126,23 +4155,47 @@ class _ScoreDialogState extends State<_ScoreDialog> {
     return null;
   }
 
+  bool _shouldShowMember(RoomMember member) {
+    return member.isActive ||
+        widget.initialChanges.any((change) => change.playerId == member.userId);
+  }
+
   @override
   void dispose() {
     for (final controller in _controllers.values) {
       controller.dispose();
     }
+    _noteController.dispose();
     super.dispose();
   }
 
   void _submit() {
     final changes = <ScoreChange>[];
     for (final entry in _controllers.entries) {
-      final value = int.tryParse(entry.value.text.trim());
-      if (value != null) {
+      final rawValue = entry.value.text.trim();
+      if (rawValue.isEmpty) continue;
+      final value = int.tryParse(rawValue);
+      if (value == null) {
+        setState(() => _error = '请输入有效的整数分数');
+        return;
+      }
+      if (value != 0) {
         changes.add(ScoreChange(playerId: entry.key, value: value));
       }
     }
-    Navigator.pop(context, changes);
+    if (changes.isEmpty) {
+      setState(() => _error = '至少填写一项非零分数');
+      return;
+    }
+    if (widget.scoringMode == ScoringMode.money && _sumChanges(changes) != 0) {
+      setState(() => _error = '金额模式每局必须平账，当前差额为 ${_sumChanges(changes)}');
+      return;
+    }
+    final note = _noteController.text.trim();
+    Navigator.pop(
+      context,
+      _ScoreInput(changes: changes, note: note.isEmpty ? null : note),
+    );
   }
 
   @override
@@ -3153,16 +4206,33 @@ class _ScoreDialogState extends State<_ScoreDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final member in widget.members.where(
-              (member) => member.isActive,
-            ))
+            for (final member in widget.members.where(_shouldShowMember))
               TextField(
                 controller: _controllers[member.userId],
+                readOnly: !member.isActive,
                 keyboardType: const TextInputType.numberWithOptions(
                   signed: true,
                 ),
                 decoration: InputDecoration(
-                  labelText: '玩家 ${_shortId(member.userId)}',
+                  labelText: _profileName(member.userId, widget.profiles),
+                  helperText: member.isActive ? null : '已离开成员，历史分数会保留',
+                ),
+              ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteController,
+              maxLength: 120,
+              decoration: const InputDecoration(
+                labelText: '备注（可选）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_error != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
           ],
@@ -3173,7 +4243,7 @@ class _ScoreDialogState extends State<_ScoreDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        FilledButton(onPressed: _submit, child: const Text('保存')),
+        FilledButton(onPressed: _submit, child: const Text('继续')),
       ],
     );
   }
