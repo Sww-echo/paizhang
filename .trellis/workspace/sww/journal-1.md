@@ -392,3 +392,39 @@
 ### Next Steps
 
 - 将 supabase/migrations/20261002120000_interaction_completion.sql 应用到真实 Supabase，执行双客户端投票、Realtime、离开/移除历史和头像同步验收。
+
+
+## Session 13: 修复未配置 Supabase 时的 Web 静态交互误导
+<!-- trellis-session: v=2 fp=cd0dd75017704676 -->
+
+**Date**: 2026-10-03
+**Task**: 修复未配置 Supabase 时的 Web 静态交互误导
+**Branch**: `main`
+
+### Summary
+
+确认 Web 之前展示的是未配置 Supabase 时的静态 HomeShell，房间点击只弹提示并不会调用接口。新增真实启动分流：配置缺失时展示明确的 Supabase 配置页，配置完成后进入 AuthGate 和 ConnectedRoomPage；补充回归测试和 README 说明。
+
+### Main Changes
+
+- main 启动时保留 AppServices 配置状态，未配置后端不再展示静态房间数据
+- 新增 SupabaseSetupPage，明确提示接口未连接及启动参数
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc9cfae` | fix: prevent unconfigured web demo interactions |
+
+### Testing
+
+- [OK] flutter analyze、flutter test（25 项）、flutter build web、git diff --check
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 提供真实 Supabase URL 和 publishable key 后，使用 dart-define 启动 Web，继续验收登录、头像点击转换、牌局和投票接口
+- 将 interaction_completion 与 review_hardening migrations 应用到真实 Supabase 后执行双客户端验收
