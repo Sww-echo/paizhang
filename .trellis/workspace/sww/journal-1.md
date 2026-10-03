@@ -463,3 +463,36 @@
 ### Next Steps
 
 - 配置真实 Supabase URL 和 publishable key 后再次启动，验证 AuthGate、房间接口和头像点击转换
+
+
+## Session 15: Apply Supabase migrations and fix avatar schema
+<!-- trellis-session: v=2 fp=e07b43be798c2d3d -->
+
+**Date**: 2026-10-03
+**Task**: Apply Supabase migrations and fix avatar schema
+**Branch**: `main`
+
+### Summary
+
+已通过 Supabase MCP 确认远端迁移只到 round_restore，导致 profiles.avatar_key 缺失并触发 42703。按顺序应用 interaction_completion、review_hardening，并新增 security_advisor_cleanup 收紧仅触发器函数 sync_room_status_from_sessions 的匿名/登录执行权限。验证 avatar_key/avatar_url 字段、关键 RPC 和迁移记录均存在；Web 已用真实 Supabase URL/Publishable Key 构建并进入登录页。
+
+### Main Changes
+
+- 远端应用 interaction_completion、review_hardening、security_advisor_cleanup 迁移
+- 新增 supabase/migrations/20261003123000_security_advisor_cleanup.sql
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Supabase migrations list、information_schema 字段/RPC 查询、security advisor、git diff --check
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 登录 Web 测试账号后验证房间加载、头像点击积分转换、Realtime、牌局和关闭投票完整链路

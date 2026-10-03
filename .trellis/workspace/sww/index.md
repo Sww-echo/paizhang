@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-10-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~465 | Active |
+| `journal-1.md` | ~498 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-10-03 | Apply Supabase migrations and fix avatar schema | - | `main` |
 | 14 | 2026-10-03 | 修复 Web 白屏并完成本地验收 | `79401d0` | `main` |
 | 13 | 2026-10-03 | 修复未配置 Supabase 时的 Web 静态交互误导 | `dc9cfae` | `main` |
 | 12 | 2026-10-03 | 牌账代码 review 与交互优化 | - | `main` |
