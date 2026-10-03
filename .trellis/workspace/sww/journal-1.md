@@ -428,3 +428,38 @@
 
 - 提供真实 Supabase URL 和 publishable key 后，使用 dart-define 启动 Web，继续验收登录、头像点击转换、牌局和投票接口
 - 将 interaction_completion 与 review_hardening migrations 应用到真实 Supabase 后执行双客户端验收
+
+
+## Session 14: 修复 Web 白屏并完成本地验收
+<!-- trellis-session: v=2 fp=55d35c7d1e5ac5f9 -->
+
+**Date**: 2026-10-03
+**Task**: 修复 Web 白屏并完成本地验收
+**Branch**: `main`
+
+### Summary
+
+浏览器复核发现 Flutter web-server 的 DDC 调试注入在当前内置浏览器中白屏，已改用 flutter build web 后的静态产物提供 8080 页面；页面已正常显示 Supabase 配置提示，且配置命令文案已修正。
+
+### Main Changes
+
+- 确认 8080 调试注入白屏与应用渲染逻辑无关，静态 Web 构建产物可正常渲染
+- 保留 8080 Web 服务，供本地浏览器查看构建结果
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79401d0` | fix: correct web setup command hint |
+
+### Testing
+
+- [OK] 内置浏览器访问 http://127.0.0.1:8080/ 已显示牌账配置页
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 配置真实 Supabase URL 和 publishable key 后再次启动，验证 AuthGate、房间接口和头像点击转换
