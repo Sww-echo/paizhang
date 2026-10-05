@@ -496,3 +496,37 @@
 ### Next Steps
 
 - 登录 Web 测试账号后验证房间加载、头像点击积分转换、Realtime、牌局和关闭投票完整链路
+
+
+## Session 16: 头像转积分交互与 Web 弹窗修复
+<!-- trellis-session: v=2 fp=113b11d97ab539b2 -->
+
+**Date**: 2026-10-05
+**Task**: 头像转积分交互与 Web 弹窗修复
+**Branch**: `main`
+
+### Summary
+
+将房间头像转账固定为当前用户转给被点击好友，移除转出方/接收方选择；修复邀请码 AlertDialog 在 Web 上触发 LayoutBuilder intrinsic layout 断言；同步记录关闭投票半数阈值与远端 Advisor 优化迁移。
+
+### Main Changes
+
+- lib/presentation/score_dialogs.dart: fixed transfer participants
+- lib/presentation/room_page.dart: avatar interaction and invite dialog
+- supabase/migrations/20261005090000_advisor_and_close_vote_optimization.sql: vote threshold and RLS/index optimization
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 相关 Flutter 单测与静态分析已通过；用户要求后续不再额外测试
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 如需继续使用当前 Web 页面，重启 Flutter web-server 以加载构造函数变更
