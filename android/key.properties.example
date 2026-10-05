@@ -1,0 +1,6 @@
+# Copy to android/key.properties (ignored by git). Supply your own production identity.
+applicationId=your.verified.application.id
+storeFile=/absolute/path/to/your/upload-keystore.jks
+storePassword=REPLACE_LOCALLY
+keyAlias=REPLACE_LOCALLY
+keyPassword=REPLACE_LOCALLY

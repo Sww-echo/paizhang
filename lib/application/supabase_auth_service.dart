@@ -1,18 +1,20 @@
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
+import '../domain/auth_gateway.dart';
 import '../domain/models.dart';
+import '../domain/repositories.dart';
 import '../infrastructure/backend/supabase_auth_repository.dart';
-import '../infrastructure/backend/supabase_room_repository.dart';
 
-class SupabaseAuthService {
+class SupabaseAuthService implements AuthGateway {
   const SupabaseAuthService({
     required this.authRepository,
     required this.roomRepository,
   });
 
   final SupabaseAuthRepository authRepository;
-  final SupabaseRoomRepository roomRepository;
+  final RoomRepository roomRepository;
 
+  @override
   Future<void> requestCode(String identifier) async {
     final normalized = identifier.trim();
     if (normalized.isEmpty) {
@@ -29,6 +31,7 @@ class SupabaseAuthService {
     }
   }
 
+  @override
   Future<User> verifyCode({
     required String identifier,
     required String code,
@@ -74,6 +77,7 @@ class SupabaseAuthService {
     }
   }
 
+  @override
   Future<void> signInWithPassword({
     required String email,
     required String password,
@@ -111,8 +115,10 @@ class SupabaseAuthService {
     }
   }
 
+  @override
   Future<void> signOut() => authRepository.signOut();
 
+  @override
   Future<void> updateNickname({required String nickname}) async {
     final normalized = nickname.trim();
     if (normalized.isEmpty) {
@@ -129,6 +135,7 @@ class SupabaseAuthService {
     }
   }
 
+  @override
   Future<void> updateAvatar({
     required String avatarKey,
     String? avatarUrl,
@@ -176,6 +183,7 @@ class SupabaseAuthService {
     }
   }
 
+  @override
   Future<void> clearAvatar({
     String? previousAvatarKey,
     String? previousAvatarUrl,
@@ -210,7 +218,18 @@ class SupabaseAuthService {
     }
   }
 
-  Stream<dynamic> get authStateChanges => authRepository.authStateChanges;
+  @override
+  User? get currentUser {
+    final user = authRepository.currentUser;
+    if (user == null) return null;
+    return User(id: user.id, nickname: _nicknameFrom(user),
+        avatarKey: _avatarKeyFrom(user), avatarUrl: _avatarUrlFrom(user),
+        email: user.email, phone: user.phone);
+  }
+
+  @override
+  Stream<User?> get authStateChanges =>
+      authRepository.authStateChanges.map((_) => currentUser);
 
   bool _looksLikePhone(String value) =>
       RegExp(r'^\+?[0-9][0-9\- ]{5,}$').hasMatch(value);

@@ -6,74 +6,44 @@ import 'package:crypto/crypto.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show SupabaseClient, FileOptions;
 
-import '../../domain/invite_service.dart';
 import '../../domain/models.dart';
-import '../local/app_database.dart';
-import '../local/sync_queue.dart';
+import '../../domain/app_error.dart';
+import '../../domain/repositories.dart';
+import '../../domain/room_snapshot.dart';
+import 'app_error_mapper.dart';
 
-class RemoteInvite {
-  const RemoteInvite({
-    required this.id,
-    required this.roomId,
-    required this.token,
-    required this.code,
-    required this.kind,
-    required this.expiresAt,
-    this.createdAt,
-    this.revokedAt,
-  });
+export '../../domain/repositories.dart' show RemoteInvite, RemoteAvatarUpload;
+export '../../domain/room_snapshot.dart';
 
-  final String id;
-  final String roomId;
-  final String token;
-  final String code;
-  final InviteKind kind;
-  final DateTime? expiresAt;
-  final DateTime? createdAt;
-  final DateTime? revokedAt;
-
-  bool get hasSecret => token.isNotEmpty;
-
-  String get shareLink =>
-      hasSecret ? const InviteService().createWebLink(token) : '';
-}
-
-class RemoteRoomSnapshot {
-  const RemoteRoomSnapshot({
-    required this.room,
-    required this.sessions,
-    required this.rounds,
-    this.profiles = const {},
-    this.closeVote,
-  });
-
-  final Room room;
-  final List<GameSession> sessions;
-  final List<Round> rounds;
-  final Map<String, User> profiles;
-  final RoomCloseVoteSummary? closeVote;
-}
-
-class RemoteAvatarUpload {
-  const RemoteAvatarUpload({required this.key, required this.url});
-
-  final String key;
-  final String url;
-}
-
-class RoundWriteResult {
-  const RoundWriteResult({required this.round, required this.queued});
-
-  final Round round;
-  final bool queued;
-}
-
-class SupabaseRoomRepository {
+class SupabaseRoomRepository implements RoomRepository {
   SupabaseRoomRepository(this.client, {Random? random})
     : _random = random ?? Random.secure();
 
   final SupabaseClient client;
   final Random _random;
+
+  @override
+  String? get currentUserId => client.auth.currentUser?.id;
+
+  @override
+  Future<Round> writeRound(RoundMutation mutation) => guardRemote(() async {
+    if (_requireUserId() != mutation.actorId) {
+      throw const AppError(AppErrorKind.sessionChanged, '账号已切换，请重新操作');
+    }
+    final result = await client.rpc('upsert_round_with_scores_v2', params: {
+      'p_round_id': mutation.round.id,
+      'p_session_id': mutation.round.sessionId,
+      'p_round_number': mutation.round.number,
+      'p_note': mutation.round.note,
+      'p_changes': [for (final change in mutation.round.changes)
+        {'player_id': change.playerId, 'value': change.value}],
+      'p_operation_id': mutation.operationId,
+      'p_actor_id': mutation.actorId,
+      'p_operation': mutation.operation,
+      'p_expected_version': mutation.expectedVersion,
+    });
+    return roundFromJson(Map<String, dynamic>.from(result as Map));
+  });
 
   Future<void> upsertProfile({
     required String userId,
@@ -93,6 +63,7 @@ class SupabaseRoomRepository {
     });
   }
 
+  @override
   Future<void> ensureCurrentUserProfile({
     required String nickname,
     String? avatarKey,
@@ -138,6 +109,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<Room> createRoom({
     required String name,
     required String gameType,
@@ -155,10 +127,12 @@ class SupabaseRoomRepository {
     return getRoom(roomId);
   }
 
+  @override
   Future<void> leaveRoom(String roomId) async {
     await client.rpc('leave_room', params: {'target_room_id': roomId});
   }
 
+  @override
   Future<RemoteInvite> createInvite({
     required String roomId,
     required InviteKind kind,
@@ -190,6 +164,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<List<RemoteInvite>> listInvites(String roomId) async {
     final rows = await client
         .from('invite_tokens')
@@ -199,6 +174,7 @@ class SupabaseRoomRepository {
     return rows.map<RemoteInvite>(_inviteFromRow).toList();
   }
 
+  @override
   Future<void> revokeInvite(String inviteId) async {
     await client.rpc(
       'revoke_room_invite',
@@ -206,6 +182,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<RemoteInvite> refreshInvite({
     required String inviteId,
     required String roomId,
@@ -236,6 +213,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<Room> setInputPermission({
     required String roomId,
     required InputPermission permission,
@@ -247,6 +225,7 @@ class SupabaseRoomRepository {
     return getRoom(roomId);
   }
 
+  @override
   Future<Room> removeMember({
     required String roomId,
     required String userId,
@@ -258,6 +237,7 @@ class SupabaseRoomRepository {
     return getRoom(roomId);
   }
 
+  @override
   Future<Room> transferOwnership({
     required String roomId,
     required String userId,
@@ -269,6 +249,7 @@ class SupabaseRoomRepository {
     return getRoom(roomId);
   }
 
+  @override
   Future<String> joinByToken(String token) async {
     final result = await client.rpc(
       'join_room_by_invite',
@@ -277,6 +258,7 @@ class SupabaseRoomRepository {
     return result as String;
   }
 
+  @override
   Future<String> joinByCode(String code) async {
     final result = await client.rpc(
       'join_room_by_invite_code',
@@ -285,6 +267,7 @@ class SupabaseRoomRepository {
     return result as String;
   }
 
+  @override
   Future<Room> getRoom(String roomId) async {
     final row = await client
         .from('rooms')
@@ -294,6 +277,7 @@ class SupabaseRoomRepository {
     return _roomFromRow(row);
   }
 
+  @override
   Future<List<Room>> listMyRooms() async {
     final rows = await client
         .from('rooms')
@@ -304,22 +288,24 @@ class SupabaseRoomRepository {
     return rows.map<Room>(_roomFromRow).toList();
   }
 
-  Future<RemoteRoomSnapshot> getRoomSnapshot(String roomId) async {
-    final room = await getRoom(roomId);
-    final sessions = await listGameSessions(roomId);
-    final rounds = await listRoundsForSessions(
-      sessions.map((session) => session.id),
-    );
-    final profiles = await _listMemberProfiles(room.members);
-    final closeVote = await getCloseVote(room);
-    return RemoteRoomSnapshot(
+  @override
+  Future<RoomSnapshot> getRoomSnapshot(String roomId) => guardRemote(() async {
+    final initial = await Future.wait<Object>([getRoom(roomId), listGameSessions(roomId)]);
+    final room = initial[0] as Room;
+    final sessions = initial[1] as List<GameSession>;
+    final values = await Future.wait<dynamic>([
+      listRoundsForSessions(sessions.map((session) => session.id)),
+      _listMemberProfiles(room.members),
+      getCloseVote(room),
+    ]);
+    return RoomSnapshot(
       room: room,
       sessions: List.unmodifiable(sessions),
-      rounds: List.unmodifiable(rounds),
-      profiles: Map.unmodifiable(profiles),
-      closeVote: closeVote,
+      rounds: List.unmodifiable(values[0] as List<Round>),
+      profiles: Map.unmodifiable(values[1] as Map<String, User>),
+      closeVote: values[2] as RoomCloseVoteSummary?,
     );
-  }
+  });
 
   Future<Map<String, User>> _listMemberProfiles(
     Iterable<RoomMember> members,
@@ -341,6 +327,7 @@ class SupabaseRoomRepository {
     };
   }
 
+  @override
   Future<GameSession> createGameSession({
     required String roomId,
     required String name,
@@ -352,6 +339,7 @@ class SupabaseRoomRepository {
     return _getGameSession(sessionId as String);
   }
 
+  @override
   Future<GameSession> startGameSession(
     String sessionId, {
     int? expectedVersion,
@@ -364,6 +352,7 @@ class SupabaseRoomRepository {
     return _getGameSession(sessionId);
   }
 
+  @override
   Future<GameSession> finishGameSession(
     String sessionId, {
     int? expectedVersion,
@@ -376,6 +365,7 @@ class SupabaseRoomRepository {
     return _getGameSession(sessionId);
   }
 
+  @override
   Future<void> manageGameSession(
     String sessionId,
     String action, {
@@ -402,6 +392,7 @@ class SupabaseRoomRepository {
     return _gameSessionFromRow(row);
   }
 
+  @override
   Future<void> updateRoomDetails(
     Room room, {
     required String name,
@@ -451,6 +442,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<void> castCloseVote(
     Room room,
     bool approved, {
@@ -469,6 +461,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<void> cancelCloseVote(Room room, String proposalId) async {
     await client.rpc(
       'cancel_room_close_vote',
@@ -476,34 +469,81 @@ class SupabaseRoomRepository {
     );
   }
 
-  Future<List<RemoteRoomSnapshot>> listMyHistory() async {
-    final rows = await client.rpc('get_my_room_history') as List;
-    return rows.map((item) {
-      final row = item as Map<String, dynamic>;
-      final profiles = (row['profiles'] as List).cast<Map<String, dynamic>>();
-      return RemoteRoomSnapshot(
-        room: _roomFromRow(row['room'] as Map<String, dynamic>),
-        sessions: (row['sessions'] as List)
-            .cast<Map<String, dynamic>>()
-            .map(_gameSessionFromRow)
-            .toList(),
-        rounds: (row['rounds'] as List)
-            .cast<Map<String, dynamic>>()
-            .map(_roundFromRow)
-            .toList(),
-        profiles: {
-          for (final profile in profiles)
-            profile['id'] as String: User(
-              id: profile['id'] as String,
-              nickname: profile['nickname'] as String,
-              avatarKey: profile['avatar_key'] as String?,
-              avatarUrl: profile['avatar_url'] as String?,
-            ),
-        },
-      );
-    }).toList();
-  }
+  @override
+  Future<List<HistoryRoomSummary>> listHistoryRooms({
+    int limit = 20, HistoryRoomSummary? before,
+  }) => guardRemote(() async {
+    final rows = await client.rpc('get_room_history_page', params: {
+      'p_limit': limit,
+      'p_before_at': before?.lastActivityAt.toUtc().toIso8601String(),
+      'p_before_id': before?.roomId,
+    }) as List;
+    return [for (final row in rows) HistoryRoomSummary(
+      roomId: row['room_id'] as String, name: row['room_name'] as String,
+      gameType: row['game_type'] as String,
+      scoringMode: ScoringMode.values.byName(row['scoring_mode'] as String),
+      isCurrentMember: row['is_current_member'] as bool,
+      sessionCount: (row['session_count'] as num).toInt(),
+      lastActivityAt: DateTime.parse(row['last_activity_at'] as String),
+    )];
+  });
 
+  @override
+  Future<List<HistorySessionSummary>> listHistorySessions(String roomId, {
+    int limit = 20, HistorySessionSummary? before,
+  }) => guardRemote(() async {
+    final rows = await client.rpc('get_room_history_sessions', params: {
+      'p_room_id': roomId, 'p_limit': limit,
+      'p_before_at': before?.lastActivityAt.toUtc().toIso8601String(),
+      'p_before_id': before?.session.id,
+    }) as List;
+    return [for (final row in rows) HistorySessionSummary(
+      session: _gameSessionFromRow(Map<String, dynamic>.from(row as Map)),
+      roundCount: (row['round_count'] as num).toInt(),
+      lastActivityAt: DateTime.parse(row['last_activity_at'] as String),
+    )];
+  });
+
+  @override
+  Future<RoomSnapshot> getHistorySession(String roomId, String sessionId) =>
+      guardRemote(() async {
+    final rounds = <String, Round>{};
+    Map<String, dynamic>? data;
+    int? afterNumber;
+    String? afterId;
+    while (true) {
+      data = Map<String, dynamic>.from(await client.rpc(
+        'get_room_history_snapshot', params: {
+          'p_room_id': roomId, 'p_session_id': sessionId, 'p_limit': 500,
+          'p_after_number': afterNumber, 'p_after_id': afterId,
+        }) as Map);
+      for (final value in data['rounds'] as List) {
+        final round = roundFromJson(Map<String, dynamic>.from(value as Map));
+        rounds[round.id] = round;
+      }
+      if (data['has_more'] != true) break;
+      final nextNumber = (data['next_number'] as num).toInt();
+      final nextId = data['next_id'] as String;
+      if (nextNumber == afterNumber && nextId == afterId) {
+        throw const AppError(AppErrorKind.unknown, '历史分页未前进，请重新加载');
+      }
+      afterNumber = nextNumber;
+      afterId = nextId;
+    }
+    return RoomSnapshot(
+      room: _roomFromRow(Map<String, dynamic>.from(data['room'] as Map)),
+      sessions: [for (final value in data['sessions'] as List)
+        _gameSessionFromRow(Map<String, dynamic>.from(value as Map))],
+      rounds: List.unmodifiable(rounds.values),
+      profiles: {for (final profile in data['profiles'] as List)
+        profile['id'] as String: User(id: profile['id'] as String,
+          nickname: profile['nickname'] as String,
+          avatarKey: profile['avatar_key'] as String?,
+          avatarUrl: profile['avatar_url'] as String?)},
+    );
+  });
+
+  @override
   Future<RemoteAvatarUpload> uploadAvatar(
     Uint8List bytes,
     String extension,
@@ -529,6 +569,7 @@ class SupabaseRoomRepository {
     );
   }
 
+  @override
   Future<void> removeAvatarFile(String? key) async {
     if (key == null || key.startsWith('preset:')) return;
     final userId = _requireUserId();
@@ -545,194 +586,6 @@ class SupabaseRoomRepository {
     return rows.map<GameSession>(_gameSessionFromRow).toList();
   }
 
-  Future<Round> recordRound({
-    required String sessionId,
-    required int roundNumber,
-    required List<ScoreChange> changes,
-    String? note,
-    String? roundId,
-    String? operationId,
-    String operation = 'create',
-  }) async {
-    _requireUserId();
-    if (operation != 'delete' && changes.isEmpty) {
-      throw const PaizhangException('至少需要一名玩家的分数变化');
-    }
-    final result = await client.rpc(
-      'upsert_round_with_scores',
-      params: {
-        'p_round_id': _uuidOrNull(roundId),
-        'p_session_id': sessionId,
-        'p_round_number': roundNumber,
-        'p_note': note,
-        'p_changes': changes
-            .map(
-              (change) => {'player_id': change.playerId, 'value': change.value},
-            )
-            .toList(),
-        'p_operation_id': operationId,
-        'p_operation': operation,
-      },
-    );
-    return _getRound(result as String);
-  }
-
-  Future<RoundWriteResult> recordRoundWithQueue({
-    required SyncQueue queue,
-    required String sessionId,
-    required int roundNumber,
-    required List<ScoreChange> changes,
-    String? note,
-    String? roundId,
-    String? operationId,
-    String operation = 'create',
-  }) async {
-    return _writeRoundWithQueue(
-      queue: queue,
-      sessionId: sessionId,
-      roundNumber: roundNumber,
-      changes: changes,
-      note: note,
-      roundId: roundId,
-      operationId: operationId,
-      operation: operation,
-    );
-  }
-
-  Future<RoundWriteResult> updateRoundWithQueue({
-    required SyncQueue queue,
-    required String sessionId,
-    required int roundNumber,
-    required String roundId,
-    required List<ScoreChange> changes,
-    String? note,
-    String? operationId,
-  }) async {
-    return _writeRoundWithQueue(
-      queue: queue,
-      sessionId: sessionId,
-      roundNumber: roundNumber,
-      changes: changes,
-      note: note,
-      roundId: roundId,
-      operationId: operationId,
-      operation: 'update',
-    );
-  }
-
-  Future<RoundWriteResult> deleteRoundWithQueue({
-    required SyncQueue queue,
-    required Round round,
-    String? operationId,
-  }) async {
-    final result = await _writeRoundWithQueue(
-      queue: queue,
-      sessionId: round.sessionId,
-      roundNumber: round.number,
-      changes: const [],
-      note: round.note,
-      roundId: round.id,
-      operationId: operationId,
-      operation: 'delete',
-    );
-    if (!result.queued) return result;
-    return RoundWriteResult(
-      round: round.copyWith(deletedAt: DateTime.now()),
-      queued: true,
-    );
-  }
-
-  Future<RoundWriteResult> _writeRoundWithQueue({
-    required SyncQueue queue,
-    required String sessionId,
-    required int roundNumber,
-    required List<ScoreChange> changes,
-    required String operation,
-    String? note,
-    String? roundId,
-    String? operationId,
-  }) async {
-    final resolvedRoundId = roundId ?? _randomUuid();
-    final resolvedOperationId = operationId ?? _randomUuid();
-    try {
-      final round = await recordRound(
-        sessionId: sessionId,
-        roundNumber: roundNumber,
-        changes: changes,
-        note: note,
-        roundId: resolvedRoundId,
-        operationId: resolvedOperationId,
-        operation: operation,
-      );
-      return RoundWriteResult(round: round, queued: false);
-    } catch (error) {
-      if (!_isRetryableSyncError(error)) rethrow;
-      await queue.enqueue(
-        operationId: resolvedOperationId,
-        entityType: 'round',
-        entityId: resolvedRoundId,
-        operation: operation,
-        payload: {
-          'round_id': resolvedRoundId,
-          'session_id': sessionId,
-          'round_number': roundNumber,
-          'note': note,
-          'changes': changes
-              .map(
-                (change) => {
-                  'player_id': change.playerId,
-                  'value': change.value,
-                },
-              )
-              .toList(),
-        },
-      );
-      return RoundWriteResult(
-        round: Round(
-          id: resolvedRoundId,
-          sessionId: sessionId,
-          number: roundNumber,
-          changes: List.unmodifiable(changes),
-          createdBy: _requireUserId(),
-          createdAt: DateTime.now(),
-          note: note,
-          deletedAt: operation == 'delete' ? DateTime.now() : null,
-        ),
-        queued: true,
-      );
-    }
-  }
-
-  Future<void> pushQueuedOperation(SyncQueueEntry entry) async {
-    final payload = jsonDecode(entry.payloadJson) as Map<String, dynamic>;
-    if (entry.entityType != 'round' ||
-        (entry.operation != 'create' &&
-            entry.operation != 'update' &&
-            entry.operation != 'delete')) {
-      throw StateError(
-        'Unsupported sync operation: ${entry.entityType}/${entry.operation}',
-      );
-    }
-    final changes = (payload['changes'] as List<dynamic>? ?? const []).map((
-      item,
-    ) {
-      final change = item as Map<String, dynamic>;
-      return ScoreChange(
-        playerId: change['player_id'] as String,
-        value: (change['value'] as num).toInt(),
-      );
-    }).toList();
-    await recordRound(
-      roundId: payload['round_id'] as String? ?? entry.entityId,
-      operationId: entry.operationId,
-      operation: entry.operation,
-      sessionId: payload['session_id'] as String,
-      roundNumber: (payload['round_number'] as num).toInt(),
-      note: payload['note'] as String?,
-      changes: changes,
-    );
-  }
-
   Future<List<Round>> listRounds(String sessionId) async {
     return listRoundsForSessions([sessionId]);
   }
@@ -742,45 +595,33 @@ class SupabaseRoomRepository {
     if (ids.isEmpty) return const [];
     const pageSize = 500;
     final rows = <Map<String, dynamic>>[];
-    var offset = 0;
+    Map<String, dynamic>? after;
     while (true) {
-      final page = await client
-          .from('rounds')
-          .select('*, score_changes(*)')
-          .inFilter('session_id', ids)
-          .order('round_number')
-          .range(offset, offset + pageSize - 1);
+      var query = client.from('rounds').select('*, score_changes(*)')
+          .inFilter('session_id', ids);
+      if (after != null) {
+        final session = after['session_id'] as String;
+        final number = (after['round_number'] as num).toInt();
+        final id = after['id'] as String;
+        query = query.or('session_id.gt.$session,'
+            'and(session_id.eq.$session,round_number.gt.$number),'
+            'and(session_id.eq.$session,round_number.eq.$number,id.gt.$id)');
+      }
+      final page = await query.order('session_id', ascending: true)
+          .order('round_number', ascending: true)
+          .order('id', ascending: true).limit(pageSize);
       final typedPage = page.cast<Map<String, dynamic>>();
       rows.addAll(typedPage);
       if (typedPage.length < pageSize) break;
-      offset += pageSize;
+      after = typedPage.last;
     }
     return rows.map<Round>(_roundFromRow).toList();
   }
 
-  Future<Round> _getRound(String roundId) async {
-    final row = await client
-        .from('rounds')
-        .select('*, score_changes(*)')
-        .eq('id', roundId)
-        .single();
-    return _roundFromRow(row);
-  }
-
   String _requireUserId() {
-    final userId = client.auth.currentUser?.id;
+    final userId = currentUserId;
     if (userId == null) throw const PaizhangException('请先登录');
     return userId;
-  }
-
-  String? _uuidOrNull(String? value) {
-    if (value == null ||
-        !RegExp(
-          r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
-        ).hasMatch(value)) {
-      return null;
-    }
-    return value;
   }
 
   Room _roomFromRow(Map<String, dynamic> row) {
@@ -901,13 +742,4 @@ class SupabaseRoomRepository {
         '${value.substring(20)}';
   }
 
-  bool _isRetryableSyncError(Object error) {
-    final message = error.toString().toLowerCase();
-    return message.contains('socket') ||
-        message.contains('timeout') ||
-        message.contains('network') ||
-        message.contains('connection') ||
-        message.contains('failed host lookup') ||
-        message.contains('fetch');
-  }
 }

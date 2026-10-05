@@ -1,0 +1,86 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Flutter version
+        id: sdk
+        run: echo "version=$(tr -d '[:space:]' < .flutter-version)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.sdk.outputs.version }}
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - name: Verify generated database is committed
+        run: git diff --exit-code -- lib/infrastructure/local/app_database.g.dart
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze --no-pub
+      - run: flutter test --no-pub --coverage
+      - run: flutter build web --no-pub
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: coverage/lcov.info
+          retention-days: 7
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.39.2
+      - run: supabase start
+      - run: supabase db reset --local
+      - run: supabase test db
+      - name: Stop local database
+        if: always()
+        run: supabase stop --no-backup
+
+  android-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PAIZHANG_VERIFY_RELEASE: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Read Flutter version
+        id: sdk
+        run: echo "version=$(tr -d '[:space:]' < .flutter-version)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.sdk.outputs.version }}
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: Compile unsigned verification APK (not a release for users)
+        run: flutter build apk --release --no-pub
+      - name: Check release manifest networking permission
+        run: python3 tool/check_android_manifest.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned-verification-only
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7

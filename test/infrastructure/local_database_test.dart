@@ -1,3 +1,4 @@
+import 'package:paizhang/domain/app_error.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -18,7 +19,7 @@ void main() {
   });
 
   test('房间和成员可以写入本地 SQL 缓存', () async {
-    final cache = LocalRoomCache(database);
+    final cache = LocalRoomCache(database, actorId: 'user-1');
     final room = Room(
       id: 'room-1',
       name: '周末牌局',
@@ -42,7 +43,7 @@ void main() {
   });
 
   test('刷新房间时会移除已经离开的旧成员缓存', () async {
-    final cache = LocalRoomCache(database);
+    final cache = LocalRoomCache(database, actorId: 'user-1');
     final room = Room(
       id: 'room-1',
       name: '周末牌局',
@@ -72,7 +73,7 @@ void main() {
   });
 
   test('房间快照会同步牌局、回合和分数并清理旧数据', () async {
-    final cache = LocalRoomCache(database);
+    final cache = LocalRoomCache(database, actorId: 'user-1');
     final room = Room(
       id: 'room-1',
       name: '周末牌局',
@@ -132,7 +133,7 @@ void main() {
   });
 
   test('同步队列支持成功确认和失败重试计数', () async {
-    final queue = SyncQueue(database);
+    final queue = SyncQueue(database, currentActorId: () => 'user-1');
     await queue.enqueue(
       operationId: 'op-1',
       entityType: 'round',
@@ -143,7 +144,7 @@ void main() {
     await queue.flush((entry) async {
       expect(entry.operationId, 'op-1');
     });
-    expect(await database.pendingOperations(), isEmpty);
+    expect(await database.pendingOperations(actorId: 'user-1'), isEmpty);
 
     await queue.enqueue(
       operationId: 'op-2',
@@ -152,14 +153,14 @@ void main() {
       operation: 'create',
       payload: {'value': -20},
     );
-    await queue.flush((_) async => throw StateError('network'));
-    final pending = await database.pendingOperations();
+    await queue.flush((_) async => throw const AppError(AppErrorKind.network, '网络不可用'));
+    final pending = await database.pendingOperations(actorId: 'user-1');
     expect(pending.single.attemptCount, 1);
-    expect(pending.single.lastError, contains('network'));
+    expect(pending.single.lastError, contains('网络'));
   });
 
   test('同步队列失败后会暂停后续操作，保持提交顺序', () async {
-    final queue = SyncQueue(database);
+    final queue = SyncQueue(database, currentActorId: () => 'user-1');
     await queue.enqueue(
       operationId: 'op-failed',
       entityType: 'round',
@@ -178,15 +179,15 @@ void main() {
     final pushed = <String>[];
     await queue.flush((entry) async {
       pushed.add(entry.operationId);
-      throw StateError('network');
+      throw const AppError(AppErrorKind.network, '网络不可用');
     });
 
     expect(pushed, ['op-failed']);
-    expect(await database.pendingOperations(), hasLength(2));
+    expect(await database.pendingOperations(actorId: 'user-1'), hasLength(2));
   });
 
   test('同步队列并发刷新只执行一次，避免重复提交', () async {
-    final queue = SyncQueue(database);
+    final queue = SyncQueue(database, currentActorId: () => 'user-1');
     await queue.enqueue(
       operationId: 'op-concurrent',
       entityType: 'round',
@@ -207,11 +208,11 @@ void main() {
     await Future.wait([firstFlush, secondFlush]);
 
     expect(pushCount, 1);
-    expect(await database.pendingOperations(), isEmpty);
+    expect(await database.pendingOperations(actorId: 'user-1'), isEmpty);
   });
 
   test('回合同步队列可以保存可重放的分数负载', () async {
-    final queue = SyncQueue(database);
+    final queue = SyncQueue(database, currentActorId: () => 'user-1');
     await queue.enqueue(
       operationId: 'op-round-1',
       entityType: 'round',
@@ -228,7 +229,7 @@ void main() {
       },
     );
 
-    final entry = (await database.pendingOperations()).single;
+    final entry = (await database.pendingOperations(actorId: 'user-1')).single;
     expect(entry.payloadJson, contains('session-1'));
     expect(entry.payloadJson, contains('user-2'));
   });

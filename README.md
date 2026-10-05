@@ -4,7 +4,7 @@ Flutter 客户端，使用 Supabase Auth、PostgreSQL、Realtime 和 Drift 本�
 
 ## 本地开发
 
-未提供 Supabase 配置时，测试仍可启动，Web 会显示配置提示页，不会伪装成可操作的静态房间数据。接入真实 Supabase 时传入：
+未提供 Supabase 配置时，测试仍可启动，Web 会显示配置提示页，不会伪装成可操作的静态房间数据。接入真实 Supabase 时传入项目 URL 和 publishable key：
 
 ```bash
 flutter run \
@@ -14,7 +14,20 @@ flutter run \
 
 Web 端的 Drift 本地缓存依赖 `web/sqlite3.wasm` 和 `web/drift_worker.js`，这两个运行时文件已随项目提交。
 
-数据库迁移位于 `supabase/migrations/20260930120000_initial_schema.sql`。当前会话需要绑定 Supabase 项目或安装 Supabase CLI 后才能执行远程迁移。
+数据库迁移按文件名顺序位于 `supabase/migrations/`。已连接的 Supabase 项目需要先执行全部迁移，再启动客户端；远程执行可使用 Supabase MCP，其他环境可使用 Supabase CLI。
+
+## 验证
+
+```bash
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+dart format --output=none --set-exit-if-changed lib test
+flutter analyze --no-pub
+flutter test --no-pub
+flutter build web --no-pub
+```
+
+Web 运行时必须同时提供 `SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`；publishable key 可以放在前端，禁止把 service-role key 编译进客户端。真实联调至少验证邮箱登录、创建/加入房间、点击成员头像录入转换、关闭投票、回合冲突处理和历史记录权限。
 
 ## Getting Started
 

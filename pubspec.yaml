@@ -45,6 +45,8 @@ dependencies:
   app_links: ^7.2.1
   share_plus: ^13.3.1
   image_picker: ^1.2.3
+  connectivity_plus: ^7.3.2
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

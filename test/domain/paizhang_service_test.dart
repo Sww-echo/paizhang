@@ -97,6 +97,8 @@ void main() {
       gameType: '自定义',
       scoringMode: ScoringMode.money,
     );
+    service.joinByToken(userId: player.id,
+        token: service.createInvite(roomId: room.id, kind: InviteKind.link).token);
     final game = service.startGame(
       roomId: room.id,
       actorId: owner.id,
@@ -112,7 +114,8 @@ void main() {
           ScoreChange(playerId: player.id, value: -20),
         ],
       ),
-      throwsA(isA<PaizhangException>()),
+      throwsA(isA<PaizhangException>().having(
+          (error) => error.message, 'message', '金额模式下本局金额必须平衡')),
     );
   });
 

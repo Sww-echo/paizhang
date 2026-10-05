@@ -47,7 +47,8 @@ class RoomCloseVoteSummary {
   final DateTime? expiresAt;
   final String? createdBy;
 
-  bool get isPassed => approvedCount * 2 > activeMemberCount;
+  bool get isPassed =>
+      activeMemberCount > 0 && approvedCount * 2 >= activeMemberCount;
 
   RoomCloseVoteSummary copyWith({
     int? activeMemberCount,
@@ -296,8 +297,10 @@ class Round {
   Round copyWith({
     List<ScoreChange>? changes,
     String? note,
+    bool clearNote = false,
     DateTime? deletedAt,
     bool clearDeletedAt = false,
+    int? version,
   }) {
     return Round(
       id: id,
@@ -306,9 +309,9 @@ class Round {
       changes: List.unmodifiable(changes ?? this.changes),
       createdBy: createdBy,
       createdAt: createdAt,
-      note: note ?? this.note,
+      note: clearNote ? null : (note ?? this.note),
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
-      version: version,
+      version: version ?? this.version,
     );
   }
 }

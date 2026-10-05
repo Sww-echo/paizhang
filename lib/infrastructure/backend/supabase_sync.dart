@@ -2,123 +2,66 @@ import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class RemoteChange {
-  const RemoteChange({
-    required this.table,
-    required this.eventType,
-    required this.payload,
-  });
+import '../../domain/repositories.dart';
 
-  final String table;
-  final PostgresChangeEvent eventType;
-  final Map<String, dynamic> payload;
-}
-
-class SupabaseSync {
+class SupabaseSync implements RoomEvents {
   SupabaseSync(this.client);
 
   final SupabaseClient client;
-  final StreamController<RemoteChange> _changes = StreamController.broadcast();
+  final _changes = StreamController<RoomChange>.broadcast();
+  final _connections = StreamController<bool>.broadcast();
   RealtimeChannel? _channel;
+  int _generation = 0;
 
-  Stream<RemoteChange> get changes => _changes.stream;
+  @override
+  Stream<RoomChange> get changes => _changes.stream;
+  @override
+  Stream<bool> get connectionChanges => _connections.stream;
 
-  Future<void> subscribeToRoom(String roomId) async {
-    final previousChannel = _channel;
-    _channel = null;
-    await previousChannel?.unsubscribe();
-    _channel = client
-        .channel('room:$roomId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'rooms',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'id',
-            value: roomId,
-          ),
-          callback: (payload) => _emit('rooms', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'room_members',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'room_id',
-            value: roomId,
-          ),
-          callback: (payload) => _emit('room_members', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'game_sessions',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'room_id',
-            value: roomId,
-          ),
-          callback: (payload) => _emit('game_sessions', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'rounds',
-          callback: (payload) => _emit('rounds', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'score_changes',
-          callback: (payload) => _emit('score_changes', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'room_close_proposals',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'room_id',
-            value: roomId,
-          ),
-          callback: (payload) => _emit('room_close_proposals', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'room_close_votes',
-          callback: (payload) => _emit('room_close_votes', payload),
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'profiles',
-          callback: (payload) => _emit('profiles', payload),
-        )
-        .subscribe();
+  @override
+  Future<void> start(String roomId) async {
+    await stop();
+    final generation = ++_generation;
+    final ready = Completer<void>();
+    var channel = client.channel('room:$roomId:${identityHashCode(this)}');
+    for (final table in ['rooms', 'room_members', 'game_sessions', 'rounds',
+      'score_changes', 'room_close_proposals', 'room_close_votes', 'profiles']) {
+      final column = switch (table) {
+        'rooms' => 'id',
+        'room_members' || 'game_sessions' || 'room_close_proposals' => 'room_id',
+        _ => null,
+      };
+      channel = channel.onPostgresChanges(
+        event: PostgresChangeEvent.all, schema: 'public', table: table,
+        filter: column == null ? null : PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq, column: column, value: roomId),
+        callback: (payload) {
+          if (_changes.isClosed || generation != _generation) return;
+          _changes.add(RoomChange(table: table,
+              payload: {'new': payload.newRecord, 'old': payload.oldRecord}));
+        },
+      );
+    }
+    _channel = channel.subscribe((status, error) {
+      if (_connections.isClosed || generation != _generation) return;
+      _connections.add(status == RealtimeSubscribeStatus.subscribed);
+      if (!ready.isCompleted) ready.complete();
+    });
+    await ready.future.timeout(const Duration(seconds: 3), onTimeout: () {});
   }
 
-  Future<void> dispose() async {
-    await unsubscribe();
-    await _changes.close();
-  }
-
-  Future<void> unsubscribe() async {
+  @override
+  Future<void> stop() async {
+    _generation++;
     final channel = _channel;
     _channel = null;
-    await channel?.unsubscribe();
+    if (channel != null) await client.removeChannel(channel);
   }
 
-  void _emit(String table, PostgresChangePayload payload) {
-    if (_changes.isClosed) return;
-    _changes.add(
-      RemoteChange(
-        table: table,
-        eventType: payload.eventType,
-        payload: {'new': payload.newRecord, 'old': payload.oldRecord},
-      ),
-    );
+  @override
+  Future<void> dispose() async {
+    await stop();
+    await _changes.close();
+    await _connections.close();
   }
 }
