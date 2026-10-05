@@ -33,6 +33,8 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze --no-pub
       - run: flutter test --no-pub --coverage
+      - name: Test release manifest checks without an Android SDK
+        run: python3 -m unittest discover -s tool -p '*_test.py'
       - run: flutter build web --no-pub
       - uses: actions/upload-artifact@v4
         with:
@@ -77,8 +79,8 @@ jobs:
       - run: flutter pub get --enforce-lockfile
       - name: Compile unsigned verification APK (not a release for users)
         run: flutter build apk --release --no-pub
-      - name: Check release manifest networking permission
-        run: python3 tool/check_android_manifest.py
+      - name: Check release manifest permission and verification identity
+        run: python3 tool/check_android_manifest.py --expected-application-id com.example.paizhang.verification
       - uses: actions/upload-artifact@v4
         with:
           name: android-unsigned-verification-only

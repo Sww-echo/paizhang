@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-10-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~532 | Active |
+| `journal-1.md` | ~573 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-10-05 | 可靠性续推与本地验收补齐 | - | `main` |
 | 16 | 2026-10-05 | 头像转积分交互与 Web 弹窗修复 | - | `main` |
 | 15 | 2026-10-03 | Apply Supabase migrations and fix avatar schema | - | `main` |
 | 14 | 2026-10-03 | 修复 Web 白屏并完成本地验收 | `79401d0` | `main` |

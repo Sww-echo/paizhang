@@ -24,21 +24,42 @@ class SupabaseSync implements RoomEvents {
     final generation = ++_generation;
     final ready = Completer<void>();
     var channel = client.channel('room:$roomId:${identityHashCode(this)}');
-    for (final table in ['rooms', 'room_members', 'game_sessions', 'rounds',
-      'score_changes', 'room_close_proposals', 'room_close_votes', 'profiles']) {
+    for (final table in [
+      'rooms',
+      'room_members',
+      'game_sessions',
+      'rounds',
+      'score_changes',
+      'room_close_proposals',
+      'room_close_votes',
+      'profiles',
+    ]) {
       final column = switch (table) {
         'rooms' => 'id',
-        'room_members' || 'game_sessions' || 'room_close_proposals' => 'room_id',
+        'room_members' ||
+        'game_sessions' ||
+        'room_close_proposals' => 'room_id',
         _ => null,
       };
       channel = channel.onPostgresChanges(
-        event: PostgresChangeEvent.all, schema: 'public', table: table,
-        filter: column == null ? null : PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq, column: column, value: roomId),
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: table,
+        filter: column == null
+            ? null
+            : PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: column,
+                value: roomId,
+              ),
         callback: (payload) {
           if (_changes.isClosed || generation != _generation) return;
-          _changes.add(RoomChange(table: table,
-              payload: {'new': payload.newRecord, 'old': payload.oldRecord}));
+          _changes.add(
+            RoomChange(
+              table: table,
+              payload: {'new': payload.newRecord, 'old': payload.oldRecord},
+            ),
+          );
         },
       );
     }

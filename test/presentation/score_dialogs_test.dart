@@ -23,28 +23,30 @@ void main() {
       'friend-user': const User(id: 'friend-user', nickname: '好友'),
     };
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => FilledButton(
-            onPressed: () async {
-              result = await showDialog<ScoreTransfer>(
-                context: context,
-                builder: (_) => ScoreTransferDialog(
-                  members: members,
-                  profiles: profiles,
-                  totals: const {'current-user': 30},
-                  scoringMode: ScoringMode.points,
-                  fromPlayerId: 'current-user',
-                  toPlayerId: 'friend-user',
-                ),
-              );
-            },
-            child: const Text('打开'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () async {
+                result = await showDialog<ScoreTransfer>(
+                  context: context,
+                  builder: (_) => ScoreTransferDialog(
+                    members: members,
+                    profiles: profiles,
+                    totals: const {'current-user': 30},
+                    scoringMode: ScoringMode.points,
+                    fromPlayerId: 'current-user',
+                    toPlayerId: 'friend-user',
+                  ),
+                );
+              },
+              child: const Text('打开'),
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();

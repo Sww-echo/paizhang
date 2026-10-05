@@ -7,13 +7,21 @@ import '../local/local_room_cache.dart';
 import 'app_error_mapper.dart';
 
 class RoomSyncCoordinator {
-  RoomSyncCoordinator({required this.repository, required this.realtime,
-    required this.cache, required this.isCurrent, this.onRefresh, this.onError});
+  RoomSyncCoordinator({
+    required this.repository,
+    required this.realtime,
+    required this.cache,
+    required this.isCurrent,
+    this.refreshTimeout = const Duration(seconds: 20),
+    this.onRefresh,
+    this.onError,
+  });
 
   final RoomRepository repository;
   final RoomEvents realtime;
   final LocalRoomCache cache;
   final bool Function() isCurrent;
+  final Duration refreshTimeout;
   final Future<void> Function(RoomSnapshot snapshot)? onRefresh;
   final Future<void> Function(Object error)? onError;
   StreamSubscription<RoomChange>? _subscription;
@@ -65,14 +73,21 @@ class RoomSyncCoordinator {
     do {
       _refreshQueued = false;
       try {
-        final snapshot = await repository.getRoomSnapshot(roomId);
+        final snapshot = await repository
+            .getRoomSnapshot(roomId)
+            .timeout(refreshTimeout);
         if (generation != _generation || !isCurrent()) return;
         if (!snapshot.room.hasActiveMember(cache.actorId)) {
           throw const AppError(AppErrorKind.forbidden, '你已不再是房间成员，请从历史记录查看');
         }
         _snapshot = snapshot;
-        await cache.saveRoomSnapshot(room: snapshot.room, sessions: snapshot.sessions,
-            rounds: snapshot.rounds, profiles: snapshot.profiles, closeVote: snapshot.closeVote);
+        await cache.saveRoomSnapshot(
+          room: snapshot.room,
+          sessions: snapshot.sessions,
+          rounds: snapshot.rounds,
+          profiles: snapshot.profiles,
+          closeVote: snapshot.closeVote,
+        );
         if (generation != _generation || !isCurrent()) return;
         await onRefresh?.call(snapshot);
       } catch (error) {
@@ -118,17 +133,21 @@ class RoomSyncCoordinator {
     if (snapshot == null) return true;
     bool matches(String key, Iterable<String> values) {
       final ids = values.toSet();
-      return [change.payload['new'], change.payload['old']].any(
-          (row) => row is Map && ids.contains(row[key]));
+      return [
+        change.payload['new'],
+        change.payload['old'],
+      ].any((row) => row is Map && ids.contains(row[key]));
     }
+
     return switch (change.table) {
       'rooms' => matches('id', [snapshot.room.id]),
       'room_members' || 'game_sessions' => true,
       'rounds' => matches('session_id', snapshot.sessions.map((s) => s.id)),
       'score_changes' => matches('round_id', snapshot.rounds.map((r) => r.id)),
       'room_close_proposals' => matches('room_id', [snapshot.room.id]),
-      'room_close_votes' => snapshot.closeVote?.proposalId == null ||
-          matches('proposal_id', [snapshot.closeVote!.proposalId!]),
+      'room_close_votes' =>
+        snapshot.closeVote?.proposalId == null ||
+            matches('proposal_id', [snapshot.closeVote!.proposalId!]),
       'profiles' => matches('id', snapshot.profiles.keys),
       _ => false,
     };

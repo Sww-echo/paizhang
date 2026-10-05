@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'presentation_helpers.dart';
 
 class AvatarPreset {
@@ -12,6 +13,7 @@ class AvatarPreset {
   final String emoji;
   final Color color;
 }
+
 const avatarPresets = <AvatarPreset>[
   AvatarPreset(key: 'preset:leaf', emoji: '🍃', color: Color(0xFF2F7D68)),
   AvatarPreset(key: 'preset:sun', emoji: '☀️', color: Color(0xFFE29B2D)),
@@ -62,7 +64,8 @@ class AvatarPresetDialog extends StatelessWidget {
 }
 
 class UserAvatar extends StatelessWidget {
-  const UserAvatar({super.key,
+  const UserAvatar({
+    super.key,
     required this.name,
     this.avatarKey,
     this.avatarUrl,

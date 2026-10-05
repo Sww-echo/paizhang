@@ -8,9 +8,12 @@ import '../infrastructure/local/app_database.dart';
 import '../infrastructure/local/sync_queue.dart';
 
 class SyncService with WidgetsBindingObserver {
-  SyncService({required this.queue, required this.remote,
-    required this.connection, DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now;
+  SyncService({
+    required this.queue,
+    required this.remote,
+    required this.connection,
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
 
   final SyncQueue queue;
   final SupabaseSyncQueue remote;
@@ -60,7 +63,9 @@ class SyncService with WidgetsBindingObserver {
     if (_disposed || generation != _generation) return;
     final actor = queue.currentActorId();
     if (actor == null) return;
-    _operationSubscription = queue.database.watchOperations(actor).listen((entries) {
+    _operationSubscription = queue.database.watchOperations(actor).listen((
+      entries,
+    ) {
       if (_disposed || generation != _generation) return;
       _entries = entries;
       _schedule();
@@ -115,7 +120,9 @@ class SyncService with WidgetsBindingObserver {
     DateTime? earliest;
     for (final entry in _entries) {
       if (!['pending', 'retrying'].contains(entry.status)) continue;
-      if (entry.dependsOn != null && unresolved.contains(entry.dependsOn)) continue;
+      if (entry.dependsOn != null && unresolved.contains(entry.dependsOn)) {
+        continue;
+      }
       final next = entry.nextAttemptAt ?? _clock();
       if (earliest == null || next.isBefore(earliest)) earliest = next;
     }

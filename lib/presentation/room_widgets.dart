@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+
 import '../domain/models.dart';
 import 'avatar_widgets.dart';
 import 'presentation_helpers.dart';
 
 class RoomMemberScoreTile extends StatelessWidget {
-  const RoomMemberScoreTile({super.key,
+  const RoomMemberScoreTile({
+    super.key,
     required this.member,
     required this.profile,
     required this.score,
@@ -58,7 +60,8 @@ class RoomMemberScoreTile extends StatelessWidget {
 }
 
 class RoomManagementDialog extends StatelessWidget {
-  const RoomManagementDialog({super.key,
+  const RoomManagementDialog({
+    super.key,
     required this.room,
     required this.profiles,
     required this.currentUserId,
@@ -221,7 +224,8 @@ class RoomManagementDialog extends StatelessWidget {
 }
 
 class CloseVotePanel extends StatelessWidget {
-  const CloseVotePanel({super.key,
+  const CloseVotePanel({
+    super.key,
     required this.vote,
     required this.currentUserId,
     required this.createdBy,
@@ -321,7 +325,8 @@ class CloseVotePanel extends StatelessWidget {
 }
 
 class SessionCard extends StatelessWidget {
-  const SessionCard({super.key,
+  const SessionCard({
+    super.key,
     required this.session,
     required this.roundCount,
     required this.onRecord,
@@ -495,7 +500,11 @@ class ErrorCard extends StatelessWidget {
 }
 
 class RoomAccessErrorCard extends StatelessWidget {
-  const RoomAccessErrorCard({super.key, required this.message, required this.onBack});
+  const RoomAccessErrorCard({
+    super.key,
+    required this.message,
+    required this.onBack,
+  });
 
   final String message;
   final VoidCallback onBack;

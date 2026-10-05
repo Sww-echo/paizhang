@@ -7,11 +7,12 @@ class DeviceConnectionMonitor implements ConnectionMonitor {
 
   @override
   Stream<bool> get changes => _connectivity.onConnectivityChanged
-      .map((values) => !values.contains(ConnectivityResult.none)).distinct();
+      .map((values) => !values.contains(ConnectivityResult.none))
+      .distinct();
 
   @override
-  Future<bool> get isOnline async =>
-      !(await _connectivity.checkConnectivity()).contains(ConnectivityResult.none);
+  Future<bool> get isOnline async => !(await _connectivity.checkConnectivity())
+      .contains(ConnectivityResult.none);
 
   @override
   Future<void> dispose() async {}

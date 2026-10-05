@@ -1,7 +1,10 @@
 import 'dart:async';
+
 import '../domain/app_error.dart';
 import '../infrastructure/backend/app_error_mapper.dart';
+
 import 'package:flutter/material.dart';
+
 import '../application/app_services.dart';
 import '../domain/models.dart';
 import '../domain/room_snapshot.dart';
@@ -17,6 +20,7 @@ class ConnectedHistoryPage extends StatefulWidget {
   @override
   State<ConnectedHistoryPage> createState() => _ConnectedHistoryPageState();
 }
+
 class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
   final List<HistoryRoomSummary> _history = [];
   bool _loading = false;
@@ -32,11 +36,15 @@ class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
 
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final generation = _generation;
     try {
       final values = await widget.services.rooms!.listHistoryRooms(
-          before: _history.isEmpty ? null : _history.last);
+        before: _history.isEmpty ? null : _history.last,
+      );
       if (!mounted || generation != _generation) return;
       final ids = _history.map((room) => room.roomId).toSet();
       setState(() {
@@ -44,40 +52,63 @@ class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
         _hasMore = values.length == 20;
       });
     } catch (error) {
-      if (mounted && generation == _generation) setState(() => _error = mapAppError(error));
+      if (mounted && generation == _generation) {
+        setState(() => _error = mapAppError(error));
+      }
     } finally {
-      if (mounted && generation == _generation) setState(() => _loading = false);
+      if (mounted && generation == _generation) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _refresh() async {
     if (_loading) return;
-    setState(() { _generation++; _history.clear(); _hasMore = true; });
+    setState(() {
+      _generation++;
+      _history.clear();
+      _hasMore = true;
+    });
     await _loadMore();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('历史记录')),
-    body: RefreshIndicator(onRefresh: _refresh, child: ListView(
-      physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.all(20),
-      children: [
-        if (_history.isEmpty && !_loading && _error == null)
-          const Padding(padding: EdgeInsets.all(48), child: Center(child: Text('还没有历史牌局'))),
-        for (final history in _history)
-          _HistoryRoomCard(key: ValueKey('${history.roomId}:$_generation'),
-              services: widget.services, history: history),
-        if (_error != null) ErrorCard(message: _error!.message, onRetry: _loadMore),
-        if (_loading) const Center(child: CircularProgressIndicator()),
-        if (_hasMore && !_loading && _error == null)
-          TextButton(onPressed: _loadMore, child: const Text('加载更多房间')),
-      ],
-    )),
+    body: RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (_history.isEmpty && !_loading && _error == null)
+            const Padding(
+              padding: EdgeInsets.all(48),
+              child: Center(child: Text('还没有历史牌局')),
+            ),
+          for (final history in _history)
+            _HistoryRoomCard(
+              key: ValueKey('${history.roomId}:$_generation'),
+              services: widget.services,
+              history: history,
+            ),
+          if (_error != null)
+            ErrorCard(message: _error!.message, onRetry: _loadMore),
+          if (_loading) const Center(child: CircularProgressIndicator()),
+          if (_hasMore && !_loading && _error == null)
+            TextButton(onPressed: _loadMore, child: const Text('加载更多房间')),
+        ],
+      ),
+    ),
   );
 }
 
 class _HistoryRoomCard extends StatefulWidget {
-  const _HistoryRoomCard({required this.services, required this.history, super.key});
+  const _HistoryRoomCard({
+    required this.services,
+    required this.history,
+    super.key,
+  });
   final AppServices services;
   final HistoryRoomSummary history;
   @override
@@ -93,14 +124,21 @@ class _HistoryRoomCardState extends State<_HistoryRoomCard> {
 
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final values = await widget.services.rooms!.listHistorySessions(widget.history.roomId,
-          before: _sessions.isEmpty ? null : _sessions.last);
+      final values = await widget.services.rooms!.listHistorySessions(
+        widget.history.roomId,
+        before: _sessions.isEmpty ? null : _sessions.last,
+      );
       if (!mounted) return;
       final ids = _sessions.map((value) => value.session.id).toSet();
       setState(() {
-        _sessions.addAll(values.where((value) => !ids.contains(value.session.id)));
+        _sessions.addAll(
+          values.where((value) => !ids.contains(value.session.id)),
+        );
         _hasMore = values.length == 20;
       });
     } catch (error) {
@@ -114,37 +152,66 @@ class _HistoryRoomCardState extends State<_HistoryRoomCard> {
     if (_opening) return;
     setState(() => _opening = true);
     try {
-      final snapshot = await widget.services.rooms!.getHistorySession(widget.history.roomId, value.session.id);
+      final snapshot = await widget.services.rooms!.getHistorySession(
+        widget.history.roomId,
+        value.session.id,
+      );
       if (!mounted) return;
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettlementPage(
-        room: snapshot.room, session: snapshot.sessions.single,
-        rounds: snapshot.rounds, profiles: snapshot.profiles)));
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SettlementPage(
+            room: snapshot.room,
+            session: snapshot.sessions.single,
+            rounds: snapshot.rounds,
+            profiles: snapshot.profiles,
+          ),
+        ),
+      );
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mapAppError(error).message)));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(mapAppError(error).message)));
+      }
     } finally {
       if (mounted) setState(() => _opening = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) => Card(elevation: 0, child: ExpansionTile(
-    leading: const CircleAvatar(child: Icon(Icons.groups_rounded)),
-    title: Text(widget.history.name),
-    subtitle: Text('${widget.history.sessionCount} 场牌局 · ${widget.history.isCurrentMember ? '当前成员' : '已离开/被移除'}'),
-    onExpansionChanged: (expanded) { if (expanded && _sessions.isEmpty) unawaited(_loadMore()); },
-    children: [
-      if (_opening) const LinearProgressIndicator(),
-      for (final value in _sessions)
-        ListTile(title: Text(value.session.name),
-          subtitle: Text('${value.roundCount} 局有效记录 · ${sessionStatusLabel(value.session.status)}'),
-          trailing: Text(formatHistoryDate(value.lastActivityAt)),
-          onTap: _opening ? null : () => _open(value)),
-      if (_error != null) ErrorCard(message: _error!.message, onRetry: _loadMore),
-      if (_loading) const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()),
-      if (_hasMore && !_loading && _error == null)
-        TextButton(onPressed: _loadMore, child: const Text('加载更多牌局')),
-    ],
-  ));
+  Widget build(BuildContext context) => Card(
+    elevation: 0,
+    child: ExpansionTile(
+      leading: const CircleAvatar(child: Icon(Icons.groups_rounded)),
+      title: Text(widget.history.name),
+      subtitle: Text(
+        '${widget.history.sessionCount} 场牌局 · ${widget.history.isCurrentMember ? '当前成员' : '已离开/被移除'}',
+      ),
+      onExpansionChanged: (expanded) {
+        if (expanded && _sessions.isEmpty) unawaited(_loadMore());
+      },
+      children: [
+        if (_opening) const LinearProgressIndicator(),
+        for (final value in _sessions)
+          ListTile(
+            title: Text(value.session.name),
+            subtitle: Text(
+              '${value.roundCount} 局有效记录 · ${sessionStatusLabel(value.session.status)}',
+            ),
+            trailing: Text(formatHistoryDate(value.lastActivityAt)),
+            onTap: _opening ? null : () => _open(value),
+          ),
+        if (_error != null)
+          ErrorCard(message: _error!.message, onRetry: _loadMore),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: CircularProgressIndicator(),
+          ),
+        if (_hasMore && !_loading && _error == null)
+          TextButton(onPressed: _loadMore, child: const Text('加载更多牌局')),
+      ],
+    ),
+  );
 }
 
 class RoomHistoryPage extends StatelessWidget {
@@ -172,9 +239,8 @@ class RoomHistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sessions = [
-      ...snapshot.sessions,
-    ]..sort((left, right) => sessionDate(right).compareTo(sessionDate(left)));
+    final sessions = [...snapshot.sessions]
+      ..sort((left, right) => sessionDate(right).compareTo(sessionDate(left)));
     return Scaffold(
       appBar: AppBar(title: Text('${snapshot.room.name} · 历史')),
       body: sessions.isEmpty

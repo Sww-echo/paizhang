@@ -1,7 +1,11 @@
 import '../infrastructure/backend/app_error_mapper.dart';
+
 import 'package:flutter/material.dart';
+
 import '../application/app_services.dart';
+
 import 'package:image_picker/image_picker.dart';
+
 import 'avatar_widgets.dart';
 import 'history_pages.dart';
 
@@ -13,6 +17,7 @@ class ConnectedProfilePage extends StatefulWidget {
   @override
   State<ConnectedProfilePage> createState() => _ConnectedProfilePageState();
 }
+
 class _ConnectedProfilePageState extends State<ConnectedProfilePage> {
   late String _nickname;
   String? _avatarKey;

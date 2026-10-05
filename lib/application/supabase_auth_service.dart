@@ -222,9 +222,14 @@ class SupabaseAuthService implements AuthGateway {
   User? get currentUser {
     final user = authRepository.currentUser;
     if (user == null) return null;
-    return User(id: user.id, nickname: _nicknameFrom(user),
-        avatarKey: _avatarKeyFrom(user), avatarUrl: _avatarUrlFrom(user),
-        email: user.email, phone: user.phone);
+    return User(
+      id: user.id,
+      nickname: _nicknameFrom(user),
+      avatarKey: _avatarKeyFrom(user),
+      avatarUrl: _avatarUrlFrom(user),
+      email: user.email,
+      phone: user.phone,
+    );
   }
 
   @override

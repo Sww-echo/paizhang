@@ -10,28 +10,68 @@ const ownerId = 'user-1';
 const memberId = 'user-2';
 final fixtureDate = DateTime.utc(2026, 10, 3);
 
-Round fixtureRound({String id = 'round-1', String sessionId = 'session-1',
-  int value = 10, int version = 1, int number = 1}) => Round(
-  id: id, sessionId: sessionId, number: number,
-  changes: [ScoreChange(playerId: ownerId, value: value), ScoreChange(playerId: memberId, value: -value)],
-  createdBy: ownerId, createdAt: fixtureDate, version: version,
+Round fixtureRound({
+  String id = 'round-1',
+  String sessionId = 'session-1',
+  int value = 10,
+  int version = 1,
+  int number = 1,
+}) => Round(
+  id: id,
+  sessionId: sessionId,
+  number: number,
+  changes: [
+    ScoreChange(playerId: ownerId, value: value),
+    ScoreChange(playerId: memberId, value: -value),
+  ],
+  createdBy: ownerId,
+  createdAt: fixtureDate,
+  version: version,
 );
 
-RoomSnapshot fixtureSnapshot({String roomId = 'room-1', String sessionId = 'session-1',
-  List<Round> rounds = const [], int version = 1}) => RoomSnapshot(
-  room: Room(id: roomId, name: '测试房间', ownerId: ownerId, gameType: '麻将',
-    scoringMode: ScoringMode.money, createdAt: fixtureDate, version: version,
-    members: [RoomMember(userId: ownerId, role: RoomRole.owner, joinedAt: fixtureDate),
-      RoomMember(userId: memberId, role: RoomRole.member, joinedAt: fixtureDate)]),
-  sessions: [GameSession(id: sessionId, roomId: roomId, name: '第一场',
-    status: GameSessionStatus.active, createdAt: fixtureDate, version: version)],
+RoomSnapshot fixtureSnapshot({
+  String roomId = 'room-1',
+  String sessionId = 'session-1',
+  List<Round> rounds = const [],
+  int version = 1,
+}) => RoomSnapshot(
+  room: Room(
+    id: roomId,
+    name: '测试房间',
+    ownerId: ownerId,
+    gameType: '麻将',
+    scoringMode: ScoringMode.money,
+    createdAt: fixtureDate,
+    version: version,
+    members: [
+      RoomMember(userId: ownerId, role: RoomRole.owner, joinedAt: fixtureDate),
+      RoomMember(
+        userId: memberId,
+        role: RoomRole.member,
+        joinedAt: fixtureDate,
+      ),
+    ],
+  ),
+  sessions: [
+    GameSession(
+      id: sessionId,
+      roomId: roomId,
+      name: '第一场',
+      status: GameSessionStatus.active,
+      createdAt: fixtureDate,
+      version: version,
+    ),
+  ],
   rounds: rounds,
-  profiles: const {ownerId: User(id: ownerId, nickname: '房主', avatarKey: 'preset:tea'),
-    memberId: User(id: memberId, nickname: '成员')},
+  profiles: const {
+    ownerId: User(id: ownerId, nickname: '房主', avatarKey: 'preset:tea'),
+    memberId: User(id: memberId, nickname: '成员'),
+  },
 );
 
 class FakeRoomRepository implements RoomRepository {
-  FakeRoomRepository({RoomSnapshot? snapshot}) : snapshot = snapshot ?? fixtureSnapshot();
+  FakeRoomRepository({RoomSnapshot? snapshot})
+    : snapshot = snapshot ?? fixtureSnapshot();
 
   RoomSnapshot snapshot;
   String? actor = ownerId;
@@ -57,6 +97,7 @@ class FakeRoomRepository implements RoomRepository {
     joinCount++;
     return onJoin == null ? snapshot.room.id : await onJoin!(token);
   }
+
   @override
   Future<String> joinByCode(String code) => joinByToken(code);
   @override
@@ -64,49 +105,89 @@ class FakeRoomRepository implements RoomRepository {
     fetchCount++;
     return onFetch == null ? snapshot : await onFetch!(roomId);
   }
+
   @override
   Future<Round> writeRound(RoundMutation mutation) async {
     writes.add(mutation);
-    if (actor != mutation.actorId) throw const AppError(AppErrorKind.unauthenticated, '账号不匹配');
+    if (actor != mutation.actorId) {
+      throw const AppError(AppErrorKind.unauthenticated, '账号不匹配');
+    }
     if (onWrite != null) return onWrite!(mutation);
     final acknowledged = acknowledgements[mutation.operationId];
     if (acknowledged != null) return acknowledged;
-    final matching = snapshot.rounds.where((round) => round.id == mutation.round.id);
+    final matching = snapshot.rounds.where(
+      (round) => round.id == mutation.round.id,
+    );
     final previous = matching.isEmpty ? null : matching.first;
-    if (mutation.operation != 'create' && previous?.version != mutation.expectedVersion) {
-      throw const AppError(AppErrorKind.conflict, '版本冲突', code: 'version_conflict');
+    if (mutation.operation != 'create' &&
+        previous?.version != mutation.expectedVersion) {
+      throw const AppError(
+        AppErrorKind.conflict,
+        '版本冲突',
+        code: 'version_conflict',
+      );
     }
-    final result = Round(id: mutation.round.id, sessionId: mutation.round.sessionId,
+    final result = Round(
+      id: mutation.round.id,
+      sessionId: mutation.round.sessionId,
       number: previous?.number ?? snapshot.rounds.length + 1,
-      changes: mutation.round.changes, createdBy: mutation.actorId,
+      changes: mutation.round.changes,
+      createdBy: mutation.actorId,
       createdAt: previous?.createdAt ?? mutation.round.createdAt,
-      deletedAt: mutation.round.deletedAt, note: mutation.round.note,
-      version: previous == null ? 1 : previous.version + 1);
+      deletedAt: mutation.round.deletedAt,
+      note: mutation.round.note,
+      version: previous == null ? 1 : previous.version + 1,
+    );
     acknowledgements[mutation.operationId] = result;
     snapshot = snapshot.withRounds([
-      ...snapshot.rounds.where((round) => round.id != result.id), result,
+      ...snapshot.rounds.where((round) => round.id != result.id),
+      result,
     ]);
     return result;
   }
 
   @override
-  Future<List<HistoryRoomSummary>> listHistoryRooms({int limit = 20, HistoryRoomSummary? before}) async {
+  Future<List<HistoryRoomSummary>> listHistoryRooms({
+    int limit = 20,
+    HistoryRoomSummary? before,
+  }) async {
     historyRoomCalls++;
     if (before != null) return [];
-    return [HistoryRoomSummary(roomId: snapshot.room.id, name: snapshot.room.name,
-      gameType: snapshot.room.gameType, scoringMode: snapshot.room.scoringMode,
-      isCurrentMember: true, sessionCount: snapshot.sessions.length, lastActivityAt: fixtureDate)];
+    return [
+      HistoryRoomSummary(
+        roomId: snapshot.room.id,
+        name: snapshot.room.name,
+        gameType: snapshot.room.gameType,
+        scoringMode: snapshot.room.scoringMode,
+        isCurrentMember: true,
+        sessionCount: snapshot.sessions.length,
+        lastActivityAt: fixtureDate,
+      ),
+    ];
   }
+
   @override
-  Future<List<HistorySessionSummary>> listHistorySessions(String roomId,
-      {int limit = 20, HistorySessionSummary? before}) async {
+  Future<List<HistorySessionSummary>> listHistorySessions(
+    String roomId, {
+    int limit = 20,
+    HistorySessionSummary? before,
+  }) async {
     historySessionCalls++;
     if (before != null) return [];
-    return [HistorySessionSummary(session: snapshot.sessions.first,
-      roundCount: snapshot.rounds.length, lastActivityAt: fixtureDate)];
+    return [
+      HistorySessionSummary(
+        session: snapshot.sessions.first,
+        roundCount: snapshot.rounds.length,
+        lastActivityAt: fixtureDate,
+      ),
+    ];
   }
+
   @override
-  Future<RoomSnapshot> getHistorySession(String roomId, String sessionId) async {
+  Future<RoomSnapshot> getHistorySession(
+    String roomId,
+    String sessionId,
+  ) async {
     historyDetailCalls++;
     return snapshot;
   }
@@ -143,7 +224,11 @@ class FakeConnection implements ConnectionMonitor {
   Stream<bool> get changes => controller.stream;
   @override
   Future<bool> get isOnline async => online;
-  void setOnline(bool value) { online = value; controller.add(value); }
+  void setOnline(bool value) {
+    online = value;
+    controller.add(value);
+  }
+
   @override
   Future<void> dispose() async {
     if (!controller.isClosed) await controller.close();
@@ -151,14 +236,19 @@ class FakeConnection implements ConnectionMonitor {
 }
 
 class FakeAuth implements AuthGateway {
-  FakeAuth({User? user}) : _user = user ?? const User(id: ownerId, nickname: '房主');
+  FakeAuth({User? user})
+    : _user = user ?? const User(id: ownerId, nickname: '房主');
   User? _user;
   final changes = StreamController<User?>.broadcast(sync: true);
   @override
   User? get currentUser => _user;
   @override
   Stream<User?> get authStateChanges => changes.stream;
-  void setUser(User? user) { _user = user; changes.add(user); }
+  void setUser(User? user) {
+    _user = user;
+    changes.add(user);
+  }
+
   @override
   Future<void> signOut() async => setUser(null);
   @override

@@ -10,7 +10,8 @@ import '../backend/app_error_mapper.dart';
 import 'app_database.dart';
 
 class SyncQueue {
-  SyncQueue(this.database, {
+  SyncQueue(
+    this.database, {
     required this.currentActorId,
     DateTime Function()? clock,
     this.retryBase = const Duration(seconds: 2),
@@ -45,18 +46,20 @@ class SyncQueue {
     String roomId = '',
     int? baseVersion,
     String? dependsOn,
-  }) => database.enqueueOperation(SyncQueueEntriesCompanion.insert(
-    operationId: operationId,
-    actorId: Value(_requireActor()),
-    roomId: Value(roomId),
-    entityType: entityType,
-    entityId: entityId,
-    operation: operation,
-    payloadJson: jsonEncode(payload),
-    createdAt: _clock().toUtc(),
-    baseVersion: Value(baseVersion),
-    dependsOn: Value(dependsOn),
-  ));
+  }) => database.enqueueOperation(
+    SyncQueueEntriesCompanion.insert(
+      operationId: operationId,
+      actorId: Value(_requireActor()),
+      roomId: Value(roomId),
+      entityType: entityType,
+      entityId: entityId,
+      operation: operation,
+      payloadJson: jsonEncode(payload),
+      createdAt: _clock().toUtc(),
+      baseVersion: Value(baseVersion),
+      dependsOn: Value(dependsOn),
+    ),
+  );
 
   Future<void> enqueueRound({
     required String operationId,
@@ -74,21 +77,39 @@ class SyncQueue {
       throw const AppError(AppErrorKind.sessionChanged, '账号已切换，请重新操作');
     }
     await database.transaction(() async {
-      final preceding = await (database.select(database.syncQueueEntries)
-            ..where((row) => row.actorId.equals(actor) & row.entityId.equals(round.id) &
-                row.status.isIn(['pending', 'retrying', 'conflict', 'rejected']))
-            ..orderBy([(row) => OrderingTerm.desc(row.sequence)])
-            ..limit(1))
-          .getSingleOrNull();
-      if (preceding != null && ['conflict', 'rejected'].contains(preceding.status)) {
+      final preceding =
+          await (database.select(database.syncQueueEntries)
+                ..where(
+                  (row) =>
+                      row.actorId.equals(actor) &
+                      row.entityId.equals(round.id) &
+                      row.status.isIn([
+                        'pending',
+                        'retrying',
+                        'conflict',
+                        'rejected',
+                      ]),
+                )
+                ..orderBy([(row) => OrderingTerm.desc(row.sequence)])
+                ..limit(1))
+              .getSingleOrNull();
+      if (preceding != null &&
+          ['conflict', 'rejected'].contains(preceding.status)) {
         throw const AppError(AppErrorKind.conflict, '请先处理这条回合已有的同步失败');
       }
       if (!isCurrent(actor, epoch)) {
         throw const AppError(AppErrorKind.sessionChanged, '账号已切换，请重新操作');
       }
-      await enqueue(operationId: operationId, entityType: 'round', entityId: round.id,
-          operation: operation, payload: {'round': roundToJson(round)}, roomId: roomId,
-          baseVersion: baseVersion, dependsOn: preceding?.operationId);
+      await enqueue(
+        operationId: operationId,
+        entityType: 'round',
+        entityId: round.id,
+        operation: operation,
+        payload: {'round': roundToJson(round)},
+        roomId: roomId,
+        baseVersion: baseVersion,
+        dependsOn: preceding?.operationId,
+      );
     });
   }
 
@@ -120,15 +141,20 @@ class SyncQueue {
     }
   }
 
-  Future<void> _flushPending(String actor, int epoch,
-      Future<void> Function(SyncQueueEntry entry) push) async {
+  Future<void> _flushPending(
+    String actor,
+    int epoch,
+    Future<void> Function(SyncQueueEntry entry) push,
+  ) async {
     while (isCurrent(actor, epoch)) {
       final entries = await database.pendingOperations(actorId: actor);
       var progressed = false;
       for (final queued in entries) {
         if (!isCurrent(actor, epoch)) return;
         final entry = await database.operation(actor, queued.operationId);
-        if (entry == null || !['pending', 'retrying'].contains(entry.status)) continue;
+        if (entry == null || !['pending', 'retrying'].contains(entry.status)) {
+          continue;
+        }
         if (entry.nextAttemptAt?.isAfter(_clock()) ?? false) continue;
         if (entry.dependsOn != null) {
           final parent = await database.operation(actor, entry.dependsOn!);
@@ -141,22 +167,44 @@ class SyncQueue {
           if (!isCurrent(actor, epoch)) return;
           final current = await database.operation(actor, entry.operationId);
           if (current?.status != 'synced') {
-            await database.markOperationSynced(actor, entry.operationId, _clock().toUtc());
+            await database.markOperationSynced(
+              actor,
+              entry.operationId,
+              _clock().toUtc(),
+            );
           }
           progressed = true;
         } catch (error) {
           if (!isCurrent(actor, epoch)) return;
           final failure = mapAppError(error);
           if (failure.kind == AppErrorKind.sessionChanged) return;
-          final retryable = failure.isRetryable || failure.kind == AppErrorKind.unauthenticated;
-          final delay = min(300000, retryBase.inMilliseconds * (1 << min(entry.attemptCount, 8)));
-          await database.updateOperation(actor, entry.operationId, SyncQueueEntriesCompanion(
-            attemptCount: Value(entry.attemptCount + 1),
-            status: Value(retryable ? 'retrying' :
-                failure.kind == AppErrorKind.conflict ? 'conflict' : 'rejected'),
-            lastError: Value(failure.message),
-            nextAttemptAt: Value(retryable ? _clock().toUtc().add(Duration(milliseconds: delay)) : null),
-          ));
+          final retryable =
+              failure.isRetryable ||
+              failure.kind == AppErrorKind.unauthenticated;
+          final delay = min(
+            300000,
+            retryBase.inMilliseconds * (1 << min(entry.attemptCount, 8)),
+          );
+          await database.updateOperation(
+            actor,
+            entry.operationId,
+            SyncQueueEntriesCompanion(
+              attemptCount: Value(entry.attemptCount + 1),
+              status: Value(
+                retryable
+                    ? 'retrying'
+                    : failure.kind == AppErrorKind.conflict
+                    ? 'conflict'
+                    : 'rejected',
+              ),
+              lastError: Value(failure.message),
+              nextAttemptAt: Value(
+                retryable
+                    ? _clock().toUtc().add(Duration(milliseconds: delay))
+                    : null,
+              ),
+            ),
+          );
           if (retryable) return;
           await _blockDependents(actor, entry.operationId);
           progressed = true;
@@ -171,20 +219,37 @@ class SyncQueue {
   Future<void> _blockDependents(String actor, String operationId) async {
     final descendants = await dependentOperations(actor, operationId);
     for (final entry in descendants) {
-      await database.updateOperation(actor, entry.operationId, const SyncQueueEntriesCompanion(
-        status: Value('rejected'), lastError: Value('前一条修改未提交，请先处理依赖记录'),
-      ));
+      await database.updateOperation(
+        actor,
+        entry.operationId,
+        const SyncQueueEntriesCompanion(
+          status: Value('rejected'),
+          lastError: Value('前一条修改未提交，请先处理依赖记录'),
+        ),
+      );
     }
   }
 
-  Future<List<SyncQueueEntry>> dependentOperations(String actor, String operationId) async {
+  Future<List<SyncQueueEntry>> dependentOperations(
+    String actor,
+    String operationId,
+  ) async {
     final result = <SyncQueueEntry>[];
     var parents = [operationId];
     while (parents.isNotEmpty) {
-      final children = await (database.select(database.syncQueueEntries)..where((row) =>
-          row.actorId.equals(actor) & row.dependsOn.isIn(parents) &
-          row.status.isIn(['pending', 'retrying', 'conflict', 'rejected'])))
-          .get();
+      final children =
+          await (database.select(database.syncQueueEntries)..where(
+                (row) =>
+                    row.actorId.equals(actor) &
+                    row.dependsOn.isIn(parents) &
+                    row.status.isIn([
+                      'pending',
+                      'retrying',
+                      'conflict',
+                      'rejected',
+                    ]),
+              ))
+              .get();
       result.addAll(children);
       parents = children.map((entry) => entry.operationId).toList();
     }
@@ -195,16 +260,26 @@ class SyncQueue {
   Future<void> retry(String operationId) async {
     final actor = _requireActor();
     final entry = await database.operation(actor, operationId);
-    if (entry == null || entry.status == 'synced' || entry.status == 'discarded') return;
+    if (entry == null ||
+        entry.status == 'synced' ||
+        entry.status == 'discarded') {
+      return;
+    }
     if (entry.status == 'conflict') {
       throw const AppError(AppErrorKind.conflict, '请先查看最新记录并重新确认，不能直接覆盖冲突');
     }
     await database.transaction(() async {
       final values = [entry, ...await dependentOperations(actor, operationId)];
       for (final value in values) {
-        await database.updateOperation(actor, value.operationId, const SyncQueueEntriesCompanion(
-          status: Value('pending'), nextAttemptAt: Value(null), lastError: Value(null),
-        ));
+        await database.updateOperation(
+          actor,
+          value.operationId,
+          const SyncQueueEntriesCompanion(
+            status: Value('pending'),
+            nextAttemptAt: Value(null),
+            lastError: Value(null),
+          ),
+        );
       }
     });
   }
@@ -219,17 +294,24 @@ class SyncQueue {
     }
     await database.transaction(() async {
       for (final value in values) {
-        await database.updateOperation(actor, value.operationId,
-            const SyncQueueEntriesCompanion(status: Value('discarded')));
+        await database.updateOperation(
+          actor,
+          value.operationId,
+          const SyncQueueEntriesCompanion(status: Value('discarded')),
+        );
       }
     });
   }
 
   RoundMutation mutationFromEntry(SyncQueueEntry entry) {
     final payload = jsonDecode(entry.payloadJson) as Map<String, dynamic>;
-    return RoundMutation(operationId: entry.operationId, actorId: entry.actorId,
-        roomId: entry.roomId, operation: entry.operation,
-        round: roundFromJson(payload['round'] as Map<String, dynamic>),
-        expectedVersion: entry.baseVersion);
+    return RoundMutation(
+      operationId: entry.operationId,
+      actorId: entry.actorId,
+      roomId: entry.roomId,
+      operation: entry.operation,
+      round: roundFromJson(payload['round'] as Map<String, dynamic>),
+      expectedVersion: entry.baseVersion,
+    );
   }
 }

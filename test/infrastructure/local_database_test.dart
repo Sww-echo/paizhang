@@ -153,7 +153,9 @@ void main() {
       operation: 'create',
       payload: {'value': -20},
     );
-    await queue.flush((_) async => throw const AppError(AppErrorKind.network, '网络不可用'));
+    await queue.flush(
+      (_) async => throw const AppError(AppErrorKind.network, '网络不可用'),
+    );
     final pending = await database.pendingOperations(actorId: 'user-1');
     expect(pending.single.attemptCount, 1);
     expect(pending.single.lastError, contains('网络'));

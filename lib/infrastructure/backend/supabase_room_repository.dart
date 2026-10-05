@@ -30,18 +30,23 @@ class SupabaseRoomRepository implements RoomRepository {
     if (_requireUserId() != mutation.actorId) {
       throw const AppError(AppErrorKind.sessionChanged, '账号已切换，请重新操作');
     }
-    final result = await client.rpc('upsert_round_with_scores_v2', params: {
-      'p_round_id': mutation.round.id,
-      'p_session_id': mutation.round.sessionId,
-      'p_round_number': mutation.round.number,
-      'p_note': mutation.round.note,
-      'p_changes': [for (final change in mutation.round.changes)
-        {'player_id': change.playerId, 'value': change.value}],
-      'p_operation_id': mutation.operationId,
-      'p_actor_id': mutation.actorId,
-      'p_operation': mutation.operation,
-      'p_expected_version': mutation.expectedVersion,
-    });
+    final result = await client.rpc(
+      'upsert_round_with_scores_v2',
+      params: {
+        'p_round_id': mutation.round.id,
+        'p_session_id': mutation.round.sessionId,
+        'p_round_number': mutation.round.number,
+        'p_note': mutation.round.note,
+        'p_changes': [
+          for (final change in mutation.round.changes)
+            {'player_id': change.playerId, 'value': change.value},
+        ],
+        'p_operation_id': mutation.operationId,
+        'p_actor_id': mutation.actorId,
+        'p_operation': mutation.operation,
+        'p_expected_version': mutation.expectedVersion,
+      },
+    );
     return roundFromJson(Map<String, dynamic>.from(result as Map));
   });
 
@@ -290,7 +295,10 @@ class SupabaseRoomRepository implements RoomRepository {
 
   @override
   Future<RoomSnapshot> getRoomSnapshot(String roomId) => guardRemote(() async {
-    final initial = await Future.wait<Object>([getRoom(roomId), listGameSessions(roomId)]);
+    final initial = await Future.wait<Object>([
+      getRoom(roomId),
+      listGameSessions(roomId),
+    ]);
     final room = initial[0] as Room;
     final sessions = initial[1] as List<GameSession>;
     final values = await Future.wait<dynamic>([
@@ -471,77 +479,109 @@ class SupabaseRoomRepository implements RoomRepository {
 
   @override
   Future<List<HistoryRoomSummary>> listHistoryRooms({
-    int limit = 20, HistoryRoomSummary? before,
+    int limit = 20,
+    HistoryRoomSummary? before,
   }) => guardRemote(() async {
-    final rows = await client.rpc('get_room_history_page', params: {
-      'p_limit': limit,
-      'p_before_at': before?.lastActivityAt.toUtc().toIso8601String(),
-      'p_before_id': before?.roomId,
-    }) as List;
-    return [for (final row in rows) HistoryRoomSummary(
-      roomId: row['room_id'] as String, name: row['room_name'] as String,
-      gameType: row['game_type'] as String,
-      scoringMode: ScoringMode.values.byName(row['scoring_mode'] as String),
-      isCurrentMember: row['is_current_member'] as bool,
-      sessionCount: (row['session_count'] as num).toInt(),
-      lastActivityAt: DateTime.parse(row['last_activity_at'] as String),
-    )];
+    final rows = await client.rpc(
+      'get_room_history_page',
+      params: {
+        'p_limit': limit,
+        'p_before_at': before?.lastActivityAt.toUtc().toIso8601String(),
+        'p_before_id': before?.roomId,
+      },
+    ) as List;
+    return [
+      for (final row in rows)
+        HistoryRoomSummary(
+          roomId: row['room_id'] as String,
+          name: row['room_name'] as String,
+          gameType: row['game_type'] as String,
+          scoringMode: ScoringMode.values.byName(row['scoring_mode'] as String),
+          isCurrentMember: row['is_current_member'] as bool,
+          sessionCount: (row['session_count'] as num).toInt(),
+          lastActivityAt: DateTime.parse(row['last_activity_at'] as String),
+        ),
+    ];
   });
 
   @override
-  Future<List<HistorySessionSummary>> listHistorySessions(String roomId, {
-    int limit = 20, HistorySessionSummary? before,
+  Future<List<HistorySessionSummary>> listHistorySessions(
+    String roomId, {
+    int limit = 20,
+    HistorySessionSummary? before,
   }) => guardRemote(() async {
-    final rows = await client.rpc('get_room_history_sessions', params: {
-      'p_room_id': roomId, 'p_limit': limit,
-      'p_before_at': before?.lastActivityAt.toUtc().toIso8601String(),
-      'p_before_id': before?.session.id,
-    }) as List;
-    return [for (final row in rows) HistorySessionSummary(
-      session: _gameSessionFromRow(Map<String, dynamic>.from(row as Map)),
-      roundCount: (row['round_count'] as num).toInt(),
-      lastActivityAt: DateTime.parse(row['last_activity_at'] as String),
-    )];
+    final rows = await client.rpc(
+      'get_room_history_sessions',
+      params: {
+        'p_room_id': roomId,
+        'p_limit': limit,
+        'p_before_at': before?.lastActivityAt.toUtc().toIso8601String(),
+        'p_before_id': before?.session.id,
+      },
+    ) as List;
+    return [
+      for (final row in rows)
+        HistorySessionSummary(
+          session: _gameSessionFromRow(Map<String, dynamic>.from(row as Map)),
+          roundCount: (row['round_count'] as num).toInt(),
+          lastActivityAt: DateTime.parse(row['last_activity_at'] as String),
+        ),
+    ];
   });
 
   @override
   Future<RoomSnapshot> getHistorySession(String roomId, String sessionId) =>
       guardRemote(() async {
-    final rounds = <String, Round>{};
-    Map<String, dynamic>? data;
-    int? afterNumber;
-    String? afterId;
-    while (true) {
-      data = Map<String, dynamic>.from(await client.rpc(
-        'get_room_history_snapshot', params: {
-          'p_room_id': roomId, 'p_session_id': sessionId, 'p_limit': 500,
-          'p_after_number': afterNumber, 'p_after_id': afterId,
-        }) as Map);
-      for (final value in data['rounds'] as List) {
-        final round = roundFromJson(Map<String, dynamic>.from(value as Map));
-        rounds[round.id] = round;
-      }
-      if (data['has_more'] != true) break;
-      final nextNumber = (data['next_number'] as num).toInt();
-      final nextId = data['next_id'] as String;
-      if (nextNumber == afterNumber && nextId == afterId) {
-        throw const AppError(AppErrorKind.unknown, '历史分页未前进，请重新加载');
-      }
-      afterNumber = nextNumber;
-      afterId = nextId;
-    }
-    return RoomSnapshot(
-      room: _roomFromRow(Map<String, dynamic>.from(data['room'] as Map)),
-      sessions: [for (final value in data['sessions'] as List)
-        _gameSessionFromRow(Map<String, dynamic>.from(value as Map))],
-      rounds: List.unmodifiable(rounds.values),
-      profiles: {for (final profile in data['profiles'] as List)
-        profile['id'] as String: User(id: profile['id'] as String,
-          nickname: profile['nickname'] as String,
-          avatarKey: profile['avatar_key'] as String?,
-          avatarUrl: profile['avatar_url'] as String?)},
-    );
-  });
+        final rounds = <String, Round>{};
+        Map<String, dynamic>? data;
+        int? afterNumber;
+        String? afterId;
+        while (true) {
+          data = Map<String, dynamic>.from(
+            await client.rpc(
+              'get_room_history_snapshot',
+              params: {
+                'p_room_id': roomId,
+                'p_session_id': sessionId,
+                'p_limit': 500,
+                'p_after_number': afterNumber,
+                'p_after_id': afterId,
+              },
+            ) as Map,
+          );
+          for (final value in data['rounds'] as List) {
+            final round = roundFromJson(
+              Map<String, dynamic>.from(value as Map),
+            );
+            rounds[round.id] = round;
+          }
+          if (data['has_more'] != true) break;
+          final nextNumber = (data['next_number'] as num).toInt();
+          final nextId = data['next_id'] as String;
+          if (nextNumber == afterNumber && nextId == afterId) {
+            throw const AppError(AppErrorKind.unknown, '历史分页未前进，请重新加载');
+          }
+          afterNumber = nextNumber;
+          afterId = nextId;
+        }
+        return RoomSnapshot(
+          room: _roomFromRow(Map<String, dynamic>.from(data['room'] as Map)),
+          sessions: [
+            for (final value in data['sessions'] as List)
+              _gameSessionFromRow(Map<String, dynamic>.from(value as Map)),
+          ],
+          rounds: List.unmodifiable(rounds.values),
+          profiles: {
+            for (final profile in data['profiles'] as List)
+              profile['id'] as String: User(
+                id: profile['id'] as String,
+                nickname: profile['nickname'] as String,
+                avatarKey: profile['avatar_key'] as String?,
+                avatarUrl: profile['avatar_url'] as String?,
+              ),
+          },
+        );
+      });
 
   @override
   Future<RemoteAvatarUpload> uploadAvatar(
@@ -597,19 +637,25 @@ class SupabaseRoomRepository implements RoomRepository {
     final rows = <Map<String, dynamic>>[];
     Map<String, dynamic>? after;
     while (true) {
-      var query = client.from('rounds').select('*, score_changes(*)')
+      var query = client
+          .from('rounds')
+          .select('*, score_changes(*)')
           .inFilter('session_id', ids);
       if (after != null) {
         final session = after['session_id'] as String;
         final number = (after['round_number'] as num).toInt();
         final id = after['id'] as String;
-        query = query.or('session_id.gt.$session,'
-            'and(session_id.eq.$session,round_number.gt.$number),'
-            'and(session_id.eq.$session,round_number.eq.$number,id.gt.$id)');
+        query = query.or(
+          'session_id.gt.$session,'
+          'and(session_id.eq.$session,round_number.gt.$number),'
+          'and(session_id.eq.$session,round_number.eq.$number,id.gt.$id)',
+        );
       }
-      final page = await query.order('session_id', ascending: true)
+      final page = await query
+          .order('session_id', ascending: true)
           .order('round_number', ascending: true)
-          .order('id', ascending: true).limit(pageSize);
+          .order('id', ascending: true)
+          .limit(pageSize);
       final typedPage = page.cast<Map<String, dynamic>>();
       rows.addAll(typedPage);
       if (typedPage.length < pageSize) break;
@@ -741,5 +787,4 @@ class SupabaseRoomRepository implements RoomRepository {
         '${value.substring(12, 16)}-${value.substring(16, 20)}-'
         '${value.substring(20)}';
   }
-
 }

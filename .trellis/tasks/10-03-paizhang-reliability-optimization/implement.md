@@ -41,6 +41,7 @@
 - [x] 订阅成功/重连后对账，刷新中保留现有数据。
 - [x] Drift 批量/差量保存，历史摘要和详情按需加载。
 - [x] 历史房间、牌局和回合使用稳定游标分页。
+- [x] 增加可重复的本地大快照 HTTP 请求数与 SQLite 差量写入回归（合成数据，不替代实网/真机性能验收）。
 - [ ] 记录真实大数据量下的请求数、加载耗时和 SQL 写入量对比。
 
 ### Phase 4：架构、测试与交互（R5、R7、R8）
@@ -58,9 +59,10 @@
 
 - [x] 配置格式、静态分析、测试和必要构建的 CI。
 - [x] 更新 README 的验证与迁移说明。
+- [x] 增强生成 Manifest 检查（INTERNET、非 debuggable、期望 applicationId），7 项纯 Python 回归接入 CI。
 - [ ] 发布前核验正式 applicationId、签名、合并 Manifest 和真机联网。
 - [ ] 真实 Supabase 验证迁移、RPC/RLS、双设备和断网恢复。
-- [ ] 记录每阶段实际检查结果，未执行项目不得标记通过。
+- [x] 记录每阶段本地检查结果与外部验收阻塞，未执行项目不得标记通过。
 
 ## 基线验证（2026-10-03）
 
@@ -98,3 +100,51 @@
 - 关闭投票阈值统一为有效成员半数以上，远端应用 `advisor_and_close_vote_optimization` 迁移；RLS 初始化计划与关闭投票外键 Advisor 已消除。
 - 修复生成邀请码时 Web `LayoutBuilder does not support returning intrinsic dimensions`，邀请码弹窗改为有界滚动 `Dialog`。
 - 已通过相关单测、静态分析和 Web 手动复现；后续修改构造函数后需完整重启 Web 进程才能加载。
+
+### 2026-10-05：继续核查、补齐本地验收与可靠性修复
+
+本轮从已提交的 `7f872d3` 继续，未提交、推送、部署或操作远端数据库。初始实跑 56 项 Flutter 测试和静态分析通过，但格式检查发现 30 个文件不符合 CI 要求；已统一格式并修复格式展开后暴露的 13 处括号 lint。
+
+修复和回归：
+
+- **冲突基线**：`prepareReapply` 改为通过统一刷新入口更新缓存基线，再读取不含 pending 的快照；`discard` 移除草稿后对账。补充取消确认后放弃、直接放弃、权限失效及离线放弃测试。修改前四项回归实际失败（服务器 40 却恢复为旧值 10、权限失效后仍保留快照等），修复后通过。
+- **写入拒绝与权限**：`SupabaseSyncQueue` 对 `round_write_forbidden` 等房间/牌局权限拒绝重新鉴权，不依赖 Realtime 事件。明确房间失权则停用缓存视图；仍是成员且牌局结束则更新状态；核验失败暂不恢复缓存访问，但不删除草稿、不用网络错误替换原始业务拒绝。回合不存在和非创建者编辑不一律撤销整个房间。补充无事件时失权、其他房间仍同步、牌局结束、核验断网和账号代际变化测试；修改前三个核心回归实际失败，修复后通过。
+- **刷新超时**：协调器快照读取默认 20 秒超时，测试可注入短时限；挂起请求超时后释放刷新入口，网络恢复能刷新，晚响应不能覆盖新快照。
+- **性能回归**：新增 `snapshot_performance_test.dart`、`cache_performance_test.dart`，使用正式仓储与真实内存 SQLite，检查请求数量、稳定游标、差量修改行数和完整恢复，不使用不稳定的耗时阈值。
+- **工程验收**：Manifest 校验器检查生成产物的 INTERNET（无 maxSdkVersion 限制）、非 debuggable 及可指定的 applicationId；补 7 项无需 Android SDK 的 Python 测试并接入 CI。测试不等于真实合并 Manifest 已验证。
+- **文档**：补齐 README 的 SDK、隔离数据库、客户端/迁移升级顺序、队列隔离和发布签名说明；纠正 PRD/设计仍显示“未启动”的旧状态。新增 `.trellis/spec/guides/room-reconciliation.md` 记录持续适用的对账边界。
+
+#### 本轮实际验证
+
+环境：Darwin 27.0.0，Flutter 3.47.5，Dart 3.13.4，Python 3.9。
+
+| 检查 | 结果 |
+| --- | --- |
+| `dart format lib test` | 最终 62 个文件检查，0 改动 |
+| `flutter analyze --no-pub` | 通过：No issues found |
+| `flutter test --no-pub --reporter expanded` | 通过：69 项（初始 56 项，新增 13 项） |
+| `python3 -m unittest discover -s tool -p '*_test.py'` | 通过：7 项 |
+| `dart run build_runner build --delete-conflicting-outputs` | 通过；工具提示该选项已移除并忽略，生成产物与已提交版本一致 |
+| `git diff --exit-code -- lib/infrastructure/local/app_database.g.dart` | 通过 |
+| `flutter build web --no-pub` | 通过；未注入后端配置，不代表登录/实时服务验收 |
+| `git diff --check` | 通过 |
+| GitHub Actions 实际运行 | 未执行，本轮没有推送 |
+| 真实 Supabase / pgTAP | 未执行；本机无 Supabase CLI、Docker 或 PostgreSQL 工具 |
+| Android release / 最终合并 Manifest / 真机 | 未执行；本机无 Java Runtime、Android SDK，`adb devices` 无连接设备 |
+
+#### 本地合成数据测量（最后一次全量测试中的样本）
+
+| 场景 | 请求或 SQLite 修改行数 | 样本耗时 |
+| --- | --- | --- |
+| 正式仓储加载 5001 回合 | 15 次模拟 HTTP 请求；响应 JSON 合计 1,499,869 字节 | 181.837 ms |
+| 20 房间历史摘要，每房间标记 100 牌局 | 1 次模拟 HTTP 请求；4,212 字节；不请求明细 | 3.833 ms |
+| SQLite 首次保存 5001 回合、10002 分数 | 15009 行 | 289.497 ms |
+| 保存相同快照 | 1 行（快照时间戳） | 163.225 ms |
+| 仅一个回合的版本和两项分数变化 | 4 行（含快照时间戳） | 116.248 ms |
+| 从本地恢复完整快照 | 5001 回合，更新后的值/版本正确 | 78.468 ms |
+
+修改行数由 SQLite `total_changes()` 前后差值核实，不等同于 SQL 语句数。耗时包含测试运行器竞争，模拟 HTTP 不含真实网络延迟；这些数据只作为可重复的本地基线/回归，不是旧客户端与新客户端的实网性能对比，也不据此宣称生产性能提升比例。
+
+#### 剩余完成边界
+
+任务继续保持 `in_progress`。剩余未完成项是独立 Supabase 环境中的完整迁移/pgTAP、真实 Auth/Realtime 与双客户端断网重启验收、实网大数据性能对比，以及正式 applicationId/签名/合并 Manifest/真机联网和深链验收。需要对应环境与授权后继续，不能仅凭以上本地检查把任务整体标为完成。

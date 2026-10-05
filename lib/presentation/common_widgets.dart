@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+
 import '../domain/models.dart';
+
 import 'package:mobile_scanner/mobile_scanner.dart';
+
 import '../domain/invite_service.dart';
 import 'presentation_helpers.dart';
 
 class ConnectedActionButton extends StatelessWidget {
-  const ConnectedActionButton({super.key,
+  const ConnectedActionButton({
+    super.key,
     required this.icon,
     required this.label,
     required this.onPressed,
@@ -34,6 +38,7 @@ class ConnectedActionButton extends StatelessWidget {
     );
   }
 }
+
 class ConnectedRoomTile extends StatelessWidget {
   const ConnectedRoomTile({super.key, required this.room, required this.onTap});
 
@@ -70,7 +75,8 @@ class RoomFormValue {
 }
 
 class RoomFormDialog extends StatefulWidget {
-  const RoomFormDialog({super.key,
+  const RoomFormDialog({
+    super.key,
     this.title = '创建房间',
     this.submitLabel = '创建',
     this.initialName = '',
@@ -317,7 +323,8 @@ class _InviteScannerPageState extends State<InviteScannerPage> {
 }
 
 class TextInputDialog extends StatefulWidget {
-  const TextInputDialog({super.key,
+  const TextInputDialog({
+    super.key,
     required this.title,
     required this.label,
     required this.confirmLabel,

@@ -22,7 +22,9 @@ void main() {
     );
     try {
       expect(services.currentUser!.nickname, '房主');
-      auth.setUser(const User(id: ownerId, nickname: '新昵称', avatarKey: 'preset:sun'));
+      auth.setUser(
+        const User(id: ownerId, nickname: '新昵称', avatarKey: 'preset:sun'),
+      );
       await Future<void>.delayed(Duration.zero);
       expect(services.currentUser!.nickname, '新昵称');
       expect(services.currentUser!.avatarKey, 'preset:sun');

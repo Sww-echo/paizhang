@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show Supabase, SupabaseClient;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show Supabase, SupabaseClient;
 
 import '../domain/app_error.dart';
 import '../domain/auth_gateway.dart';
@@ -21,17 +22,30 @@ import 'supabase_auth_service.dart';
 import 'sync_service.dart';
 
 class AppServices {
-  AppServices({required this.database, this.client, this.auth, this.rooms,
-    this._eventsFactory, ConnectionMonitor? connection,
-    User? initialUser, bool startSync = true}) {
+  AppServices({
+    required this.database,
+    this.client,
+    this.auth,
+    this.rooms,
+    this._eventsFactory,
+    ConnectionMonitor? connection,
+    User? initialUser,
+    bool startSync = true,
+  }) {
     session = ValueNotifier(initialUser ?? auth?.currentUser);
     queue = SyncQueue(database, currentActorId: () => currentUser?.id);
     final repository = rooms;
     if (repository != null) {
-      remoteQueue = SupabaseSyncQueue(queue: queue, repository: repository,
-          cacheForActor: cacheForActor);
-      syncService = SyncService(queue: queue, remote: remoteQueue!,
-          connection: connection ?? DeviceConnectionMonitor());
+      remoteQueue = SupabaseSyncQueue(
+        queue: queue,
+        repository: repository,
+        cacheForActor: cacheForActor,
+      );
+      syncService = SyncService(
+        queue: queue,
+        remote: remoteQueue!,
+        connection: connection ?? DeviceConnectionMonitor(),
+      );
       if (startSync) syncService!.start();
     }
     _authSubscription = auth?.authStateChanges.listen(_handleUser);
@@ -55,16 +69,24 @@ class AppServices {
   User? get currentUser => session.value;
   bool get isConfigured => rooms != null;
   LocalRoomCache get cache => cacheForActor(currentUser?.id ?? '');
-  LocalRoomCache cacheForActor(String actorId) => LocalRoomCache(database, actorId: actorId);
+  LocalRoomCache cacheForActor(String actorId) =>
+      LocalRoomCache(database, actorId: actorId);
 
   static AppServices create({required bool supabaseConfigured}) {
     final database = AppDatabase();
     if (!supabaseConfigured) return AppServices(database: database);
     final client = Supabase.instance.client;
     final repository = SupabaseRoomRepository(client);
-    return AppServices(database: database, client: client, rooms: repository,
-      auth: SupabaseAuthService(authRepository: SupabaseAuthRepository(client), roomRepository: repository),
-      eventsFactory: () => SupabaseSync(client));
+    return AppServices(
+      database: database,
+      client: client,
+      rooms: repository,
+      auth: SupabaseAuthService(
+        authRepository: SupabaseAuthRepository(client),
+        roomRepository: repository,
+      ),
+      eventsFactory: () => SupabaseSync(client),
+    );
   }
 
   void _handleUser(User? user) {
@@ -89,9 +111,15 @@ class AppServices {
     if (actor == null || repository == null || eventsFactory == null) {
       throw const AppError(AppErrorKind.unauthenticated, '请先登录');
     }
-    final controller = RoomController(roomId: roomId, actorId: actor,
-        repository: repository, cache: cacheForActor(actor), queue: queue,
-        events: eventsFactory(), requestSync: flushSyncQueue);
+    final controller = RoomController(
+      roomId: roomId,
+      actorId: actor,
+      repository: repository,
+      cache: cacheForActor(actor),
+      queue: queue,
+      events: eventsFactory(),
+      requestSync: flushSyncQueue,
+    );
     _controllers.add(controller);
     return controller;
   }
@@ -118,7 +146,9 @@ class AppServices {
       return cached;
     }
     try {
-      final values = await rooms!.listMyRooms().timeout(const Duration(seconds: 20));
+      final values = await rooms!.listMyRooms().timeout(
+        const Duration(seconds: 20),
+      );
       if (!queue.isCurrent(actor, generation) ||
           requestGeneration != _roomsRequestGeneration) {
         return values;
@@ -141,7 +171,9 @@ class AppServices {
   }
 
   void invalidateRooms() {
-    unawaited(loadRooms(force: true).catchError((Object error) => roomList.value));
+    unawaited(
+      loadRooms(force: true).catchError((Object error) => roomList.value),
+    );
   }
 
   Future<void> flushSyncQueue() async {

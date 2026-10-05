@@ -15,21 +15,34 @@ import '../infrastructure/local/local_room_cache.dart';
 import '../infrastructure/local/sync_queue.dart';
 
 class ReapplyDraft {
-  const ReapplyDraft({required this.entry, required this.desired, this.current});
+  const ReapplyDraft({
+    required this.entry,
+    required this.desired,
+    this.current,
+  });
   final SyncQueueEntry entry;
   final Round desired;
   final Round? current;
 }
 
 class RoomController extends ChangeNotifier {
-  RoomController({required this.roomId, required this.actorId,
-    required this.repository, required this.cache, required this.queue,
-    required RoomEvents events, required this.requestSync,
-    DateTime Function()? clock, String Function()? idFactory})
-      : _clock = clock ?? DateTime.now,
-        _idFactory = idFactory ?? newOperationId,
-        _sessionGeneration = queue.generation {
-    _sync = RoomSyncCoordinator(repository: repository, realtime: events, cache: cache,
+  RoomController({
+    required this.roomId,
+    required this.actorId,
+    required this.repository,
+    required this.cache,
+    required this.queue,
+    required RoomEvents events,
+    required this.requestSync,
+    DateTime Function()? clock,
+    String Function()? idFactory,
+  }) : _clock = clock ?? DateTime.now,
+       _idFactory = idFactory ?? newOperationId,
+       _sessionGeneration = queue.generation {
+    _sync = RoomSyncCoordinator(
+      repository: repository,
+      realtime: events,
+      cache: cache,
       isCurrent: () => isCurrent,
       onRefresh: (_) async {
         if (!isCurrent) return;
@@ -43,7 +56,8 @@ class RoomController extends ChangeNotifier {
         if (error!.isAccessError) _setSnapshot(null);
         loading = false;
         notifyListeners();
-      });
+      },
+    );
   }
 
   final String roomId;
@@ -69,45 +83,69 @@ class RoomController extends ChangeNotifier {
   bool busy = false;
   bool _disposed = false;
 
-  bool get isCurrent => !_disposed && queue.isCurrent(actorId, _sessionGeneration);
-  bool get canManage => snapshot != null && !snapshot!.room.isClosed &&
-      snapshot!.room.ownerId == actorId && snapshot!.room.hasActiveMember(actorId) &&
+  bool get isCurrent =>
+      !_disposed && queue.isCurrent(actorId, _sessionGeneration);
+  bool get canManage =>
+      snapshot != null &&
+      !snapshot!.room.isClosed &&
+      snapshot!.room.ownerId == actorId &&
+      snapshot!.room.hasActiveMember(actorId) &&
       error?.isAccessError != true;
-  bool get canInput => snapshot != null && !snapshot!.room.isClosed &&
-      snapshot!.room.hasActiveMember(actorId) && error?.isAccessError != true &&
+  bool get canInput =>
+      snapshot != null &&
+      !snapshot!.room.isClosed &&
+      snapshot!.room.hasActiveMember(actorId) &&
+      error?.isAccessError != true &&
       (snapshot!.room.inputPermission == InputPermission.all || canManage);
-  int get pendingCount => operations.where((entry) =>
-      entry.status == 'pending' || entry.status == 'retrying').length;
+  int get pendingCount => operations
+      .where((entry) => entry.status == 'pending' || entry.status == 'retrying')
+      .length;
   List<SyncQueueEntry> get failures {
     final unresolved = operations.map((entry) => entry.operationId).toSet();
-    return operations.where((entry) =>
-        (entry.status == 'rejected' || entry.status == 'conflict') &&
-        (entry.dependsOn == null || !unresolved.contains(entry.dependsOn))).toList();
+    return operations
+        .where(
+          (entry) =>
+              (entry.status == 'rejected' || entry.status == 'conflict') &&
+              (entry.dependsOn == null ||
+                  !unresolved.contains(entry.dependsOn)),
+        )
+        .toList();
   }
 
-  bool canEdit(Round round) => canInput && round.createdBy == actorId &&
-      snapshot!.sessions.any((session) =>
-          session.id == round.sessionId && session.status == GameSessionStatus.active);
+  bool canEdit(Round round) =>
+      canInput &&
+      round.createdBy == actorId &&
+      snapshot!.sessions.any(
+        (session) =>
+            session.id == round.sessionId &&
+            session.status == GameSessionStatus.active,
+      );
 
   Future<void> start() async {
     if (!isCurrent) return;
-    _cacheSubscription = cache.watchRoomSnapshot(roomId).listen((value) {
-      if (!isCurrent) return;
-      _setSnapshot(value);
-      if (value != null) loading = false;
-      notifyListeners();
-    }, onError: (Object failure) {
-      if (!isCurrent) return;
-      error = mapAppError(failure);
-      loading = false;
-      notifyListeners();
-    });
-    _operationSubscription = queue.database.watchOperations(actorId, roomId: roomId)
+    _cacheSubscription = cache
+        .watchRoomSnapshot(roomId)
+        .listen(
+          (value) {
+            if (!isCurrent) return;
+            _setSnapshot(value);
+            if (value != null) loading = false;
+            notifyListeners();
+          },
+          onError: (Object failure) {
+            if (!isCurrent) return;
+            error = mapAppError(failure);
+            loading = false;
+            notifyListeners();
+          },
+        );
+    _operationSubscription = queue.database
+        .watchOperations(actorId, roomId: roomId)
         .listen((entries) {
-      if (!isCurrent) return;
-      operations = entries;
-      notifyListeners();
-    });
+          if (!isCurrent) return;
+          operations = entries;
+          notifyListeners();
+        });
     try {
       await _loadLocal();
     } catch (failure) {
@@ -125,8 +163,9 @@ class RoomController extends ChangeNotifier {
     roundsBySession = Map.unmodifiable(grouped);
     totalsBySession = {
       for (final entry in grouped.entries)
-        entry.key: const SettlementCalculator().calculate(entry.value,
-            value!.room.scoringMode).totals,
+        entry.key: const SettlementCalculator()
+            .calculate(entry.value, value!.room.scoringMode)
+            .totals,
     };
   }
 
@@ -168,10 +207,16 @@ class RoomController extends ChangeNotifier {
     }
   }
 
-  void _validate(String sessionId, List<ScoreChange> changes, {Round? previous}) {
+  void _validate(
+    String sessionId,
+    List<ScoreChange> changes, {
+    Round? previous,
+  }) {
     if (!isCurrent) throw const AppError(AppErrorKind.sessionChanged, '账号已切换');
     if (!canInput) throw const AppError(AppErrorKind.forbidden, '当前房间不允许录入');
-    if (!snapshot!.sessions.any((s) => s.id == sessionId && s.status == GameSessionStatus.active)) {
+    if (!snapshot!.sessions.any(
+      (s) => s.id == sessionId && s.status == GameSessionStatus.active,
+    )) {
       throw const AppError(AppErrorKind.validation, '当前牌局不允许写入');
     }
     if (previous != null && previous.createdBy != actorId) {
@@ -185,7 +230,8 @@ class RoomController extends ChangeNotifier {
     }
     for (final change in changes) {
       if (!snapshot!.room.hasActiveMember(change.playerId) &&
-          !(previous?.changes.any((old) => old.playerId == change.playerId) ?? false)) {
+          !(previous?.changes.any((old) => old.playerId == change.playerId) ??
+              false)) {
         throw const AppError(AppErrorKind.validation, '只能为有效房间成员录入新分数');
       }
     }
@@ -195,44 +241,97 @@ class RoomController extends ChangeNotifier {
     }
   }
 
-  Future<void> recordRound(String sessionId, List<ScoreChange> changes, {String? note}) async {
+  Future<void> recordRound(
+    String sessionId,
+    List<ScoreChange> changes, {
+    String? note,
+  }) async {
     _validate(sessionId, changes);
     final rounds = roundsBySession[sessionId] ?? const <Round>[];
-    final number = rounds.fold<int>(0, (max, round) => round.number > max ? round.number : max) + 1;
-    await _enqueue('create', Round(id: _idFactory(), sessionId: sessionId, number: number,
-        changes: List.unmodifiable(changes), createdBy: actorId, createdAt: _clock(), note: note));
+    final number =
+        rounds.fold<int>(
+          0,
+          (max, round) => round.number > max ? round.number : max,
+        ) +
+        1;
+    await _enqueue(
+      'create',
+      Round(
+        id: _idFactory(),
+        sessionId: sessionId,
+        number: number,
+        changes: List.unmodifiable(changes),
+        createdBy: actorId,
+        createdAt: _clock(),
+        note: note,
+      ),
+    );
   }
 
-  Future<void> updateRound(Round previous, List<ScoreChange> changes, {String? note}) async {
+  Future<void> updateRound(
+    Round previous,
+    List<ScoreChange> changes, {
+    String? note,
+  }) async {
     _validate(previous.sessionId, changes, previous: previous);
-    await _enqueue('update', previous.copyWith(changes: changes, note: note,
-        clearNote: note == null, clearDeletedAt: true, version: previous.version + 1),
-        baseVersion: previous.version);
+    await _enqueue(
+      'update',
+      previous.copyWith(
+        changes: changes,
+        note: note,
+        clearNote: note == null,
+        clearDeletedAt: true,
+        version: previous.version + 1,
+      ),
+      baseVersion: previous.version,
+    );
   }
 
   Future<void> deleteRound(Round previous) async {
     _validate(previous.sessionId, previous.changes, previous: previous);
-    await _enqueue('delete', previous.copyWith(deletedAt: _clock(), version: previous.version + 1),
-        baseVersion: previous.version);
+    await _enqueue(
+      'delete',
+      previous.copyWith(deletedAt: _clock(), version: previous.version + 1),
+      baseVersion: previous.version,
+    );
   }
 
-  Future<void> _enqueue(String operation, Round round, {int? baseVersion}) async {
+  Future<void> _enqueue(
+    String operation,
+    Round round, {
+    int? baseVersion,
+  }) async {
     if (round.note != null && round.note!.length > 120) {
       throw const AppError(AppErrorKind.validation, '备注不能超过 120 个字符');
     }
-    await queue.enqueueRound(operationId: _idFactory(), roomId: roomId,
-        operation: operation, round: round, baseVersion: baseVersion,
-        expectedActorId: actorId, expectedGeneration: _sessionGeneration);
+    await queue.enqueueRound(
+      operationId: _idFactory(),
+      roomId: roomId,
+      operation: operation,
+      round: round,
+      baseVersion: baseVersion,
+      expectedActorId: actorId,
+      expectedGeneration: _sessionGeneration,
+    );
     await _loadLocal();
     unawaited(requestSync());
   }
 
   Future<ReapplyDraft> prepareReapply(SyncQueueEntry entry) async {
-    final dependents = await queue.dependentOperations(actorId, entry.operationId);
+    final dependents = await queue.dependentOperations(
+      actorId,
+      entry.operationId,
+    );
     final last = dependents.isEmpty ? entry : dependents.last;
     final desired = queue.mutationFromEntry(last).round;
-    final fresh = await repository.getRoomSnapshot(roomId);
+    await refresh();
     if (!isCurrent) throw const AppError(AppErrorKind.sessionChanged, '账号已切换');
+    if (error != null) throw error!;
+    final fresh = await cache.loadRoomSnapshot(roomId, includePending: false);
+    if (!isCurrent) throw const AppError(AppErrorKind.sessionChanged, '账号已切换');
+    if (fresh == null) {
+      throw const AppError(AppErrorKind.notFound, '房间不存在或已无法访问');
+    }
     Round? current;
     for (final round in fresh.rounds) {
       if (round.id == desired.id) current = round;
@@ -245,15 +344,29 @@ class RoomController extends ChangeNotifier {
 
   Future<void> applyRebased(ReapplyDraft draft) async {
     final current = draft.current;
-    _validate(draft.desired.sessionId, draft.desired.changes, previous: current);
+    _validate(
+      draft.desired.sessionId,
+      draft.desired.changes,
+      previous: current,
+    );
     await queue.database.transaction(() async {
       await queue.discard(draft.entry.operationId);
-      final operation = current == null ? 'create' : draft.desired.isDeleted ? 'delete' : 'update';
-      await queue.enqueueRound(operationId: _idFactory(), roomId: roomId,
-          operation: operation,
-          round: draft.desired.copyWith(version: current == null ? 1 : current.version + 1),
-          baseVersion: current?.version,
-          expectedActorId: actorId, expectedGeneration: _sessionGeneration);
+      final operation = current == null
+          ? 'create'
+          : draft.desired.isDeleted
+          ? 'delete'
+          : 'update';
+      await queue.enqueueRound(
+        operationId: _idFactory(),
+        roomId: roomId,
+        operation: operation,
+        round: draft.desired.copyWith(
+          version: current == null ? 1 : current.version + 1,
+        ),
+        baseVersion: current?.version,
+        expectedActorId: actorId,
+        expectedGeneration: _sessionGeneration,
+      );
     });
     await _loadLocal();
     unawaited(requestSync());
@@ -265,8 +378,10 @@ class RoomController extends ChangeNotifier {
   }
 
   Future<void> discard(SyncQueueEntry entry) async {
+    if (!isCurrent) throw const AppError(AppErrorKind.sessionChanged, '账号已切换');
     await queue.discard(entry.operationId);
     await _loadLocal();
+    await refresh();
   }
 
   @override

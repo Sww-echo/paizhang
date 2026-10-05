@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+
 import '../application/app_services.dart';
 import '../domain/models.dart';
 import '../domain/room_snapshot.dart';
+
 import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+
 import '../application/room_controller.dart';
 import '../domain/app_error.dart';
 import '../infrastructure/backend/app_error_mapper.dart';
@@ -42,7 +46,7 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     final snapshot = _controller.snapshot;
     if (snapshot == null) {
       throw _controller.error ??
-        const AppError(AppErrorKind.network, '暂无可用房间数据');
+          const AppError(AppErrorKind.network, '暂无可用房间数据');
     }
     return snapshot;
   }
@@ -339,15 +343,23 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     final input = await _showScoreInput(snapshot);
     if (input == null || !mounted) return;
     await _runRoomAction(() async {
-      await _controller.recordRound(session.id, input.changes, note: input.note);
+      await _controller.recordRound(
+        session.id,
+        input.changes,
+        note: input.note,
+      );
       _showSuccess('记录已保存到本机，正在同步');
     });
   }
 
   Future<void> _editRound(RoomSnapshot snapshot, Round round) async {
     if (!_controller.canEdit(round)) return;
-    final input = await _showScoreInput(snapshot, initialChanges: round.changes,
-        initialNote: round.note, title: '编辑第 ${round.number} 局');
+    final input = await _showScoreInput(
+      snapshot,
+      initialChanges: round.changes,
+      initialNote: round.note,
+      title: '编辑第 ${round.number} 局',
+    );
     if (input == null || !mounted) return;
     await _runRoomAction(() async {
       await _controller.updateRound(round, input.changes, note: input.note);
@@ -357,15 +369,20 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
 
   Future<void> _deleteRound(RoomSnapshot snapshot, Round round) async {
     if (!_controller.canEdit(round)) return;
-    final confirmed = await _confirmAction(title: '撤销第 ${round.number} 局？',
-        message: '这局会保留在历史记录中，但不再计入总分。', confirmLabel: '撤销');
+    final confirmed = await _confirmAction(
+      title: '撤销第 ${round.number} 局？',
+      message: '这局会保留在历史记录中，但不再计入总分。',
+      confirmLabel: '撤销',
+    );
     if (!confirmed || !mounted) return;
     await _runRoomAction(() => _controller.deleteRound(round));
   }
 
   Future<void> _restoreRound(RoomSnapshot snapshot, Round round) async {
     if (!_controller.canEdit(round)) return;
-    await _runRoomAction(() => _controller.updateRound(round, round.changes, note: round.note));
+    await _runRoomAction(
+      () => _controller.updateRound(round, round.changes, note: round.note),
+    );
   }
 
   Future<void> _showRoundHistory(
@@ -431,20 +448,27 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     }
   }
 
-  Future<void> _transferScore(RoomSnapshot snapshot, {
+  Future<void> _transferScore(
+    RoomSnapshot snapshot, {
     required GameSession session,
     required String toPlayerId,
   }) async {
-    if (!_controller.canInput || session.status != GameSessionStatus.active) return;
+    if (!_controller.canInput || session.status != GameSessionStatus.active) {
+      return;
+    }
     final fromPlayerId = widget.services.currentUser?.id;
     if (fromPlayerId == null || fromPlayerId == toPlayerId) return;
-    final transfer = await showDialog<ScoreTransfer>(context: context,
-      builder: (context) => ScoreTransferDialog(members: snapshot.room.members,
+    final transfer = await showDialog<ScoreTransfer>(
+      context: context,
+      builder: (context) => ScoreTransferDialog(
+        members: snapshot.room.members,
         profiles: snapshot.profiles,
         totals: _controller.totalsBySession[session.id] ?? const {},
         scoringMode: snapshot.room.scoringMode,
         fromPlayerId: fromPlayerId,
-        toPlayerId: toPlayerId));
+        toPlayerId: toPlayerId,
+      ),
+    );
     if (transfer == null || !mounted) return;
     await _runRoomAction(() async {
       await _controller.recordRound(session.id, [
@@ -704,30 +728,40 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     await _runRoomAction(() async {
       final draft = await _controller.prepareReapply(entry);
       if (!mounted) return;
-      String describe(Round? round) => round == null ? '尚未创建' :
-          '${round.isDeleted ? '已撤销；' : ''}${round.changes.map((change) =>
-            '${profileName(change.playerId, _controller.snapshot?.profiles ?? {})} ${change.value}').join('，')}';
-      final confirmed = await _confirmAction(title: '重新确认这条记录',
-        message: '服务器当前：${describe(draft.current)}\n本地草稿：${describe(draft.desired)}\n'
+      String describe(Round? round) => round == null
+          ? '尚未创建'
+          : '${round.isDeleted ? '已撤销；' : ''}${round.changes.map((change) => '${profileName(change.playerId, _controller.snapshot?.profiles ?? {})} ${change.value}').join('，')}';
+      final confirmed = await _confirmAction(
+        title: '重新确认这条记录',
+        message:
+            '服务器当前：${describe(draft.current)}\n本地草稿：${describe(draft.desired)}\n'
             '确认后将按最新版本重新提交草稿，并处理该回合依赖的本地修改。',
-        confirmLabel: '重新提交');
+        confirmLabel: '重新提交',
+      );
       if (confirmed && mounted) await _controller.applyRebased(draft);
     });
   }
 
   Future<void> _discardOperation(SyncQueueEntry entry) async {
-    final confirmed = await _confirmAction(title: '放弃本地修改？',
+    final confirmed = await _confirmAction(
+      title: '放弃本地修改？',
       message: '将放弃此操作及依赖它的本地修改，不会撤销服务器已经保存的内容。',
-      confirmLabel: '放弃本地修改');
-    if (confirmed && mounted) await _runRoomAction(() => _controller.discard(entry));
+      confirmLabel: '放弃本地修改',
+    );
+    if (confirmed && mounted) {
+      await _runRoomAction(() => _controller.discard(entry));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: AnimatedBuilder(animation: _controller,
-            builder: (_, _) => Text(_controller.snapshot?.room.name ?? widget.room.name)),
+        title: AnimatedBuilder(
+          animation: _controller,
+          builder: (_, _) =>
+              Text(_controller.snapshot?.room.name ?? widget.room.name),
+        ),
         actions: [
           IconButton(
             onPressed: _showRoomHistory,
@@ -786,19 +820,26 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
               .toList();
           final totals = activeSession == null
               ? const <String, int>{}
-              : (_controller.totalsBySession[activeSession.id] ?? const <String, int>{});
+              : (_controller.totalsBySession[activeSession.id] ??
+                    const <String, int>{});
           final members = data.room.members
               .where((member) => member.isActive)
               .toList();
-          final canInput = _controller.canInput && !_controller.busy && !_actionBusy;
-          final isOwner = _controller.canManage && !_controller.busy && !_actionBusy;
+          final canInput =
+              _controller.canInput && !_controller.busy && !_actionBusy;
+          final isOwner =
+              _controller.canManage && !_controller.busy && !_actionBusy;
           final scoreUnit = scoreUnitLabel(data.room.scoringMode);
           return ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              SyncStatusPanel(controller: _controller,
-                onResolve: _resolveOperation, onDiscard: _discardOperation,
-                onRetry: (entry) => _runRoomAction(() => _controller.retry(entry))),
+              SyncStatusPanel(
+                controller: _controller,
+                onResolve: _resolveOperation,
+                onDiscard: _discardOperation,
+                onRetry: (entry) =>
+                    _runRoomAction(() => _controller.retry(entry)),
+              ),
               Card(
                 elevation: 0,
                 child: ListTile(
@@ -871,9 +912,11 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                               member: member,
                               profile: data.profiles[member.userId],
                               score: totals[member.userId] ?? 0,
-                              enabled: activeSession != null &&
+                              enabled:
+                                  activeSession != null &&
                                   canInput &&
-                                  member.userId != widget.services.currentUser?.id,
+                                  member.userId !=
+                                      widget.services.currentUser?.id,
                               onTap: () => _transferScore(
                                 data,
                                 session: activeSession!,
@@ -918,8 +961,11 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
                 for (final session in data.sessions)
                   SessionCard(
                     session: session,
-                    roundCount: (_controller.roundsBySession[session.id] ?? const <Round>[])
-                        .where((round) => !round.isDeleted).length,
+                    roundCount:
+                        (_controller.roundsBySession[session.id] ??
+                                const <Round>[])
+                            .where((round) => !round.isDeleted)
+                            .length,
                     onRecord: () => _recordRound(session, data),
                     onStart: () => _startSession(session),
                     onDelete: () => _deleteDraftSession(session),
@@ -944,19 +990,36 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
   }
 }
 
-
 class RoomSnapshotBuilder extends StatelessWidget {
-  const RoomSnapshotBuilder({required this.controller, required this.builder, super.key});
+  const RoomSnapshotBuilder({
+    required this.controller,
+    required this.builder,
+    super.key,
+  });
   final RoomController controller;
   final AsyncWidgetBuilder<RoomSnapshot> builder;
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(animation: controller,
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: controller,
     builder: (context, _) {
       final data = controller.snapshot;
-      if (data != null) return builder(context, AsyncSnapshot.withData(ConnectionState.done, data));
-      if (controller.loading) return builder(context, const AsyncSnapshot.waiting());
-      return builder(context, AsyncSnapshot.withError(ConnectionState.done,
-          controller.error ?? const AppError(AppErrorKind.network, '暂无可用房间数据')));
-    });
+      if (data != null) {
+        return builder(
+          context,
+          AsyncSnapshot.withData(ConnectionState.done, data),
+        );
+      }
+      if (controller.loading) {
+        return builder(context, const AsyncSnapshot.waiting());
+      }
+      return builder(
+        context,
+        AsyncSnapshot.withError(
+          ConnectionState.done,
+          controller.error ?? const AppError(AppErrorKind.network, '暂无可用房间数据'),
+        ),
+      );
+    },
+  );
 }

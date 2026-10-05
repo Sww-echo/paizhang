@@ -40,5 +40,5 @@
     "android/app/build.gradle.kts",
     "android/app/src/main/AndroidManifest.xml"
   ],
-  "notes": "2026-10-03 创建任务后已开始实施。Phase 1–3 和 Phase 4–5 的本地实现已完成；已应用并核对远端可靠性迁移、RPC 与权限。2026-10-05 修复同账号资料刷新、账号切换在途 flush 代际竞态，并新增回归测试；头像点击转换固定为当前用户转给好友，修复邀请码弹窗 Web intrinsic layout 断言；关闭投票调整为半数以上即可通过并应用 Advisor 优化迁移。保留不做账号删除、数据导出、通知设置、复杂离线体验和移动端发布范围。`flutter analyze --no-pub` 与相关定向测试通过；本机未安装 Supabase CLI，真实双客户端、断网重启、Android release 与性能基准仍待执行。"
+  "notes": "R1–R9 的主要本地实现已落地，任务仍为 in_progress，未完成外部验收不标整体完成。此前会话已记录远端可靠性/Advisor 迁移和头像转换/Web 弹窗修复；本轮未操作远端。2026-10-05 继续复核并修复冲突放弃后旧缓存回退、写入权限拒绝未对账、快照请求挂起不释放刷新入口三项问题；新增大快照 HTTP/SQLite 性能回归、Manifest 检查测试，补齐格式/lint、README 和 spec。最终 69 项 Flutter 测试、7 项 Python 测试、静态分析、Drift 生成一致性、Web 构建和 diff 检查通过。5001 回合 SQLite 冷写15009行、重复快照1行、单回合差量4行，均为合成数据本地测量。当前缺少 Supabase CLI/Docker/PostgreSQL、Java/Android SDK 和设备；真实双客户端、断网重启、Android 正式签名/联网与实网性能对比仍待执行。没有提交、推送或部署；详细证据见 implement.md。"
 }

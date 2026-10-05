@@ -10,10 +10,14 @@ void main() {
   test('相同邀请失败后可重试，成功后重复事件不重复导航', () async {
     final repository = FakeRoomRepository();
     final navigated = <String>[];
-    final invites = InviteController(repository: repository, onRoomReady: (room) => navigated.add(room.id));
+    final invites = InviteController(
+      repository: repository,
+      onRoomReady: (room) => navigated.add(room.id),
+    );
     addTearDown(invites.dispose);
     invites.setActor(ownerId);
-    repository.onJoin = (_) async => throw const AppError(AppErrorKind.network, '离线');
+    repository.onJoin = (_) async =>
+        throw const AppError(AppErrorKind.network, '离线');
     invites.receiveToken('test-invite');
     await invites.drain();
     await Future<void>.delayed(Duration.zero);
@@ -31,7 +35,10 @@ void main() {
   test('未登录邀请在登录后处理，连续邀请不会等待房间页面关闭', () async {
     final repository = FakeRoomRepository();
     var navigationCount = 0;
-    final invites = InviteController(repository: repository, onRoomReady: (_) => navigationCount++);
+    final invites = InviteController(
+      repository: repository,
+      onRoomReady: (_) => navigationCount++,
+    );
     addTearDown(invites.dispose);
     invites.receiveToken('first');
     expect(repository.joinCount, 0);
@@ -47,7 +54,10 @@ void main() {
     final response = Completer<String>();
     repository.onJoin = (_) => response.future;
     var navigationCount = 0;
-    final invites = InviteController(repository: repository, onRoomReady: (_) => navigationCount++);
+    final invites = InviteController(
+      repository: repository,
+      onRoomReady: (_) => navigationCount++,
+    );
     addTearDown(invites.dispose);
     invites.setActor(ownerId);
     await invites.drain();

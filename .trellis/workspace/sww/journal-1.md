@@ -530,3 +530,41 @@
 ### Next Steps
 
 - 如需继续使用当前 Web 页面，重启 Flutter web-server 以加载构造函数变更
+
+
+## Session 17: 可靠性续推与本地验收补齐
+
+**Date**: 2026-10-05
+**Task**: 10-03-paizhang-reliability-optimization
+**Branch**: `main`
+
+### Summary
+
+继续核查优化任务并修复三项可靠性缺口：冲突确认绕过基线更新导致放弃后回退旧分数；写入权限拒绝未触发房间对账；悬挂快照请求长期占用刷新入口。本地可执行项已补齐，任务保持 in_progress，不能把本地通过视作外部验收完成。
+
+### Main Changes
+
+- RoomController 冲突处理走统一刷新与无 pending 基线读取，放弃后对账；四项回归先失败后通过。
+- SupabaseSyncQueue 按房间/牌局权限拒绝重新鉴权，失权或核验失败停用缓存视图但保留草稿；与单回合错误区分，并保留账号代际保护和其他房间同步。
+- RoomSyncCoordinator 增加可注入的快照超时，释放刷新入口并忽略晚响应。
+- 修复 30 文件格式检查失败和 13 处格式展开后暴露的括号 lint；新增 13 项 Flutter 回归与 7 项 Manifest 脚本测试。
+- 补充大快照 HTTP 请求数和 SQLite 差量写入测量、README、任务进度及 `.trellis/spec/guides/room-reconciliation.md`。
+
+### Git Commits
+
+无；本轮没有提交、推送、部署或访问远端数据库。
+
+### Testing
+
+- [OK] 69 项 Flutter 测试、7 项 Python 测试、flutter analyze、Web 构建、Drift 生成产物一致性、格式与 git diff --check。
+- [OK] 本地合成 5001 回合：15 次模拟 HTTP 请求；SQLite 首次保存修改 15009 行、重复快照 1 行、单回合差量 4 行。详细耗时与边界见任务 implement.md。
+- [未执行] 本机无 Supabase CLI/Docker/PostgreSQL、Java/Android SDK 和连接设备，未运行真实数据库、多设备、Android release 与实网性能验收。
+
+### Status
+
+本地实现与回归通过；任务整体仍为 **in_progress**。
+
+### Next Steps
+
+- 提供隔离 Supabase 环境执行完整迁移、pgTAP 与真实 Auth/Realtime/双客户端断网重启验收，不自动操作生产库。
+- 准备 JDK/Android SDK、正式包名/签名及设备，执行真实 release 合并 Manifest、联网、深链与性能验收。

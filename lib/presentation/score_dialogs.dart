@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../domain/models.dart';
 import 'presentation_helpers.dart';
 
@@ -22,7 +23,8 @@ class ScoreInput {
 }
 
 class ScoreTransferDialog extends StatefulWidget {
-  const ScoreTransferDialog({super.key,
+  const ScoreTransferDialog({
+    super.key,
     required this.members,
     required this.profiles,
     required this.totals,
@@ -177,15 +179,14 @@ class _TransferMemberSummary extends StatelessWidget {
     }
     return InputDecorator(
       decoration: InputDecoration(labelText: label),
-      child: Text(
-        member == null ? '成员已离开房间' : memberLabel(member, profiles),
-      ),
+      child: Text(member == null ? '成员已离开房间' : memberLabel(member, profiles)),
     );
   }
 }
 
 class RoundHistoryDialog extends StatelessWidget {
-  const RoundHistoryDialog({super.key,
+  const RoundHistoryDialog({
+    super.key,
     required this.session,
     required this.rounds,
     required this.profiles,
@@ -291,7 +292,8 @@ class RoundHistoryDialog extends StatelessWidget {
 }
 
 class ScoreDialog extends StatefulWidget {
-  const ScoreDialog({super.key,
+  const ScoreDialog({
+    super.key,
     required this.members,
     required this.profiles,
     required this.scoringMode,

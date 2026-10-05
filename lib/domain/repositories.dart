@@ -5,9 +5,16 @@ import 'models.dart';
 import 'room_snapshot.dart';
 
 class RemoteInvite {
-  const RemoteInvite({required this.id, required this.roomId, required this.token,
-    required this.code, required this.kind, required this.expiresAt,
-    this.createdAt, this.revokedAt});
+  const RemoteInvite({
+    required this.id,
+    required this.roomId,
+    required this.token,
+    required this.code,
+    required this.kind,
+    required this.expiresAt,
+    this.createdAt,
+    this.revokedAt,
+  });
 
   final String id;
   final String roomId;
@@ -18,7 +25,8 @@ class RemoteInvite {
   final DateTime? createdAt;
   final DateTime? revokedAt;
   bool get hasSecret => token.isNotEmpty;
-  String get shareLink => hasSecret ? const InviteService().createWebLink(token) : '';
+  String get shareLink =>
+      hasSecret ? const InviteService().createWebLink(token) : '';
 }
 
 class RemoteAvatarUpload {
@@ -29,28 +37,73 @@ class RemoteAvatarUpload {
 
 abstract interface class RoomRepository {
   String? get currentUserId;
-  Future<void> ensureCurrentUserProfile({required String nickname,
-    String? avatarKey, String? avatarUrl, bool clearAvatar = false, bool replaceAvatar = false});
-  Future<Room> createRoom({required String name, required String gameType, required ScoringMode scoringMode});
+  Future<void> ensureCurrentUserProfile({
+    required String nickname,
+    String? avatarKey,
+    String? avatarUrl,
+    bool clearAvatar = false,
+    bool replaceAvatar = false,
+  });
+  Future<Room> createRoom({
+    required String name,
+    required String gameType,
+    required ScoringMode scoringMode,
+  });
   Future<void> leaveRoom(String roomId);
   Future<String> joinByToken(String token);
   Future<String> joinByCode(String code);
-  Future<RemoteInvite> createInvite({required String roomId, required InviteKind kind, Duration? ttl});
+  Future<RemoteInvite> createInvite({
+    required String roomId,
+    required InviteKind kind,
+    Duration? ttl,
+  });
   Future<List<RemoteInvite>> listInvites(String roomId);
   Future<void> revokeInvite(String inviteId);
-  Future<RemoteInvite> refreshInvite({required String inviteId, required String roomId,
-    required InviteKind kind, Duration? ttl});
-  Future<Room> setInputPermission({required String roomId, required InputPermission permission});
+  Future<RemoteInvite> refreshInvite({
+    required String inviteId,
+    required String roomId,
+    required InviteKind kind,
+    Duration? ttl,
+  });
+  Future<Room> setInputPermission({
+    required String roomId,
+    required InputPermission permission,
+  });
   Future<Room> removeMember({required String roomId, required String userId});
-  Future<Room> transferOwnership({required String roomId, required String userId});
-  Future<void> updateRoomDetails(Room room, {required String name,
-    required String gameType, required ScoringMode scoringMode});
-  Future<GameSession> createGameSession({required String roomId, required String name});
-  Future<GameSession> startGameSession(String sessionId, {int? expectedVersion});
-  Future<GameSession> finishGameSession(String sessionId, {int? expectedVersion});
-  Future<void> manageGameSession(String sessionId, String action, {String? name, int? expectedVersion});
-  Future<void> castCloseVote(Room room, bool approved,
-    {RoomCloseVoteSummary? vote, RoomStatus targetStatus = RoomStatus.archived});
+  Future<Room> transferOwnership({
+    required String roomId,
+    required String userId,
+  });
+  Future<void> updateRoomDetails(
+    Room room, {
+    required String name,
+    required String gameType,
+    required ScoringMode scoringMode,
+  });
+  Future<GameSession> createGameSession({
+    required String roomId,
+    required String name,
+  });
+  Future<GameSession> startGameSession(
+    String sessionId, {
+    int? expectedVersion,
+  });
+  Future<GameSession> finishGameSession(
+    String sessionId, {
+    int? expectedVersion,
+  });
+  Future<void> manageGameSession(
+    String sessionId,
+    String action, {
+    String? name,
+    int? expectedVersion,
+  });
+  Future<void> castCloseVote(
+    Room room,
+    bool approved, {
+    RoomCloseVoteSummary? vote,
+    RoomStatus targetStatus = RoomStatus.archived,
+  });
   Future<void> cancelCloseVote(Room room, String proposalId);
   Future<RemoteAvatarUpload> uploadAvatar(Uint8List bytes, String extension);
   Future<void> removeAvatarFile(String? key);

@@ -16,19 +16,33 @@ import 'package:paizhang/presentation/settlement_page.dart';
 import '../support/fakes.dart';
 
 void main() {
-  AppServices servicesFor(FakeRoomRepository repository, {FakeAuth? auth}) => AppServices(
-    database: AppDatabase(NativeDatabase.memory()), rooms: repository,
-    auth: auth, initialUser: auth?.currentUser ?? const User(id: ownerId, nickname: '房主'),
-    eventsFactory: FakeRoomEvents.new, connection: FakeConnection(), startSync: false,
-  );
+  AppServices servicesFor(FakeRoomRepository repository, {FakeAuth? auth}) =>
+      AppServices(
+        database: AppDatabase(NativeDatabase.memory()),
+        rooms: repository,
+        auth: auth,
+        initialUser:
+            auth?.currentUser ?? const User(id: ownerId, nickname: '房主'),
+        eventsFactory: FakeRoomEvents.new,
+        connection: FakeConnection(),
+        startSync: false,
+      );
 
   testWidgets('正式房间页面的录入确认接入本地队列并显示待同步状态', (tester) async {
     final repository = FakeRoomRepository();
-    repository.onWrite = (_) async => throw const AppError(AppErrorKind.network, '离线');
+    repository.onWrite = (_) async =>
+        throw const AppError(AppErrorKind.network, '离线');
     final services = servicesFor(repository);
     try {
       debugPrint('checkpoint: mount room');
-      await tester.pumpWidget(MaterialApp(home: ConnectedRoomPage(services: services, room: repository.snapshot.room)));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ConnectedRoomPage(
+            services: services,
+            room: repository.snapshot.room,
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       debugPrint('checkpoint: room ready');
       expect(repository.fetchCount, 1);
@@ -46,7 +60,10 @@ void main() {
       await tester.pumpAndSettle();
       debugPrint('checkpoint: confirmed settled');
       expect(find.textContaining('条本地修改待同步'), findsOneWidget);
-      expect(await services.database.pendingOperations(actorId: ownerId), hasLength(1));
+      expect(
+        await services.database.pendingOperations(actorId: ownerId),
+        hasLength(1),
+      );
       expect(repository.writes, hasLength(1));
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -58,10 +75,14 @@ void main() {
   });
 
   testWidgets('历史页只加载摘要，展开和查看结算才请求明细', (tester) async {
-    final repository = FakeRoomRepository(snapshot: fixtureSnapshot(rounds: [fixtureRound()]));
+    final repository = FakeRoomRepository(
+      snapshot: fixtureSnapshot(rounds: [fixtureRound()]),
+    );
     final services = servicesFor(repository);
     try {
-      await tester.pumpWidget(MaterialApp(home: ConnectedHistoryPage(services: services)));
+      await tester.pumpWidget(
+        MaterialApp(home: ConnectedHistoryPage(services: services)),
+      );
       await tester.pumpAndSettle();
       expect(repository.historyRoomCalls, 1);
       expect(repository.historySessionCalls, 0);
@@ -89,8 +110,15 @@ void main() {
     final services = servicesFor(repository, auth: auth);
     final links = StreamController<Uri>.broadcast(sync: true);
     try {
-      await tester.pumpWidget(MaterialApp(home: AuthGate(services: services,
-          linkStream: links.stream, initialLink: () async => null)));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AuthGate(
+            services: services,
+            linkStream: links.stream,
+            initialLink: () async => null,
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       links.add(Uri.parse(const InviteService().createWebLink('test-token')));
       await tester.pumpAndSettle();
