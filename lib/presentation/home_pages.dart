@@ -27,6 +27,14 @@ class ConnectedHomeShell extends StatefulWidget {
 class _ConnectedHomeShellState extends State<ConnectedHomeShell> {
   int _selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(
+      widget.services.loadRooms().catchError((Object _) => const <Room>[]),
+    );
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -40,6 +48,7 @@ class _ConnectedHomeShellState extends State<ConnectedHomeShell> {
         services: widget.services,
         onMessage: _showMessage,
         onRoomsChanged: widget.services.invalidateRooms,
+        onOpenRooms: () => setState(() => _selectedIndex = 1),
       ),
       ConnectedRoomsPage(services: widget.services, onMessage: _showMessage),
       ConnectedProfilePage(services: widget.services),
@@ -80,12 +89,14 @@ class ConnectedHomePage extends StatefulWidget {
     required this.services,
     required this.onMessage,
     required this.onRoomsChanged,
+    required this.onOpenRooms,
     super.key,
   });
 
   final AppServices services;
   final ValueChanged<String> onMessage;
   final VoidCallback onRoomsChanged;
+  final VoidCallback onOpenRooms;
 
   @override
   State<ConnectedHomePage> createState() => _ConnectedHomePageState();
@@ -160,6 +171,16 @@ class _ConnectedHomePageState extends State<ConnectedHomePage> {
     );
   }
 
+  Future<void> _openRoom(BuildContext context, Room room) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ConnectedRoomPage(services: widget.services, room: room),
+      ),
+    );
+    widget.onRoomsChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = widget.services.currentUser;
@@ -197,18 +218,74 @@ class _ConnectedHomePageState extends State<ConnectedHomePage> {
           ],
         ),
         const SizedBox(height: 30),
-        const Text(
-          '真实数据已启用',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '进行中的房间',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+            ),
+            TextButton(
+              onPressed: widget.onOpenRooms,
+              child: const Text('全部房间'),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        const Card(
-          elevation: 0,
-          child: ListTile(
-            leading: Icon(Icons.cloud_done_rounded),
-            title: Text('Supabase + Drift 同步'),
-            subtitle: Text('在线实时更新，离线操作进入同步队列'),
-          ),
+        const SizedBox(height: 4),
+        AnimatedBuilder(
+          animation: Listenable.merge([
+            widget.services.roomList,
+            widget.services.roomsLoading,
+            widget.services.roomsError,
+          ]),
+          builder: (context, _) {
+            final rooms = widget.services.roomList.value;
+            final active = rooms.where((room) => !room.isClosed).toList();
+            if (active.isEmpty) {
+              if (widget.services.roomsLoading.value) {
+                return const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final error = widget.services.roomsError.value;
+              if (error != null) {
+                return ErrorCard(
+                  message: error.message,
+                  onRetry: widget.onRoomsChanged,
+                );
+              }
+              return const Card(
+                elevation: 0,
+                child: ListTile(
+                  leading: Icon(Icons.groups_outlined),
+                  title: Text('还没有进行中的房间'),
+                  subtitle: Text('创建房间，或输入牌友的邀请码加入'),
+                ),
+              );
+            }
+            final visible = active.take(3).toList();
+            return Column(
+              children: [
+                for (var index = 0; index < visible.length; index++) ...[
+                  ConnectedRoomTile(
+                    room: visible[index],
+                    onTap: () => _openRoom(context, visible[index]),
+                  ),
+                  if (index != visible.length - 1) const SizedBox(height: 12),
+                ],
+                if (active.length > visible.length)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: widget.onOpenRooms,
+                      child: Text('还有 ${active.length - visible.length} 个房间'),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(

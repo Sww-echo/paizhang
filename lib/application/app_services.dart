@@ -59,6 +59,10 @@ class AppServices {
   late final SyncQueue queue;
   late final ValueNotifier<User?> session;
   final roomList = ValueNotifier<List<Room>>([]);
+  final roomsLoading = ValueNotifier<bool>(false);
+  final roomsError = ValueNotifier<AppError?>(null);
+  Future<List<Room>>? _roomsInFlight;
+  bool _roomsRefreshQueued = false;
   SupabaseSyncQueue? remoteQueue;
   SyncService? syncService;
   StreamSubscription<User?>? _authSubscription;
@@ -92,15 +96,22 @@ class AppServices {
   void _handleUser(User? user) {
     if (_disposed) return;
     final changed = currentUser?.id != user?.id;
-    session.value = user;
-    if (!changed) return;
+    if (!changed) {
+      session.value = user;
+      return;
+    }
     _roomsRequestGeneration++;
+    _roomsInFlight = null;
+    _roomsRefreshQueued = false;
     queue.invalidateSession();
     for (final controller in _controllers) {
       controller.dispose();
     }
     _controllers.clear();
     roomList.value = const [];
+    roomsError.value = null;
+    roomsLoading.value = false;
+    session.value = user;
     unawaited(syncService?.activateSession());
   }
 
@@ -129,44 +140,97 @@ class AppServices {
     controller.dispose();
   }
 
-  Future<List<Room>> loadRooms({bool force = false}) async {
+  /// Single-flight room list loading: concurrent callers share one request and
+  /// a forced refresh requested while a load is running is queued once.
+  Future<List<Room>> loadRooms({bool force = false}) {
+    if (_disposed) {
+      return Future.error(const AppError(AppErrorKind.sessionChanged, '应用已关闭'));
+    }
     final actor = currentUser?.id;
-    if (actor == null || rooms == null) return const [];
+    if (actor == null || rooms == null) {
+      roomsLoading.value = false;
+      roomsError.value = null;
+      return Future.value(const <Room>[]);
+    }
+    final active = _roomsInFlight;
+    if (active != null) {
+      if (force) _roomsRefreshQueued = true;
+      return active;
+    }
     final generation = queue.generation;
     final requestGeneration = ++_roomsRequestGeneration;
-    final local = cacheForActor(actor);
-    final cached = await local.listRooms();
-    if (!queue.isCurrent(actor, generation) ||
+    late final Future<List<Room>> run;
+    run = _loadRooms(force, actor, generation, requestGeneration)
+        .then((values) {
+          _requireRoomsRequestCurrent(actor, generation, requestGeneration);
+          return values;
+        })
+        .whenComplete(() {
+          if (!identical(_roomsInFlight, run)) return;
+          _roomsInFlight = null;
+          if (_roomsRefreshQueued && !_disposed) {
+            _roomsRefreshQueued = false;
+            unawaited(
+              loadRooms(force: true).catchError((Object _) => const <Room>[]),
+            );
+          }
+        });
+    _roomsInFlight = run;
+    return run;
+  }
+
+  void _requireRoomsRequestCurrent(
+    String actor,
+    int generation,
+    int requestGeneration,
+  ) {
+    if (_disposed ||
+        !queue.isCurrent(actor, generation) ||
         requestGeneration != _roomsRequestGeneration) {
-      return cached;
+      throw const AppError(AppErrorKind.sessionChanged, '账号已切换，请重新加载房间');
     }
-    if (!force && cached.isNotEmpty) {
-      roomList.value = cached;
-      unawaited(loadRooms(force: true).catchError((Object error) => cached));
-      return cached;
-    }
+  }
+
+  Future<List<Room>> _loadRooms(
+    bool force,
+    String actor,
+    int generation,
+    int requestGeneration,
+  ) async {
+    final local = cacheForActor(actor);
+    var cached = const <Room>[];
+    roomsLoading.value = true;
+    roomsError.value = null;
     try {
+      cached = await local.listRooms();
+      _requireRoomsRequestCurrent(actor, generation, requestGeneration);
+      if (!force && cached.isNotEmpty) {
+        roomList.value = cached;
+        _roomsRefreshQueued = true;
+        return cached;
+      }
       final values = await rooms!.listMyRooms().timeout(
         const Duration(seconds: 20),
       );
-      if (!queue.isCurrent(actor, generation) ||
-          requestGeneration != _roomsRequestGeneration) {
-        return values;
-      }
+      _requireRoomsRequestCurrent(actor, generation, requestGeneration);
       await local.saveRooms(values);
-      if (queue.isCurrent(actor, generation) &&
-          requestGeneration == _roomsRequestGeneration) {
-        roomList.value = values;
-      }
+      _requireRoomsRequestCurrent(actor, generation, requestGeneration);
+      roomList.value = values;
+      roomsError.value = null;
       return values;
     } catch (error) {
-      if (!queue.isCurrent(actor, generation) ||
-          requestGeneration != _roomsRequestGeneration) {
+      _requireRoomsRequestCurrent(actor, generation, requestGeneration);
+      final failure = mapAppError(error);
+      if (failure.isRetryable && cached.isNotEmpty) {
+        roomsError.value = null;
         return cached;
       }
-      final failure = mapAppError(error);
-      if (failure.isRetryable && cached.isNotEmpty) return cached;
+      roomsError.value = failure;
       throw failure;
+    } finally {
+      if (!_disposed && requestGeneration == _roomsRequestGeneration) {
+        roomsLoading.value = false;
+      }
     }
   }
 
@@ -196,6 +260,8 @@ class AppServices {
     await syncService?.dispose();
     session.dispose();
     roomList.dispose();
+    roomsLoading.dispose();
+    roomsError.dispose();
     await database.close();
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'dart:collection';
 
@@ -161,6 +162,8 @@ class _AuthGateState extends State<AuthGate> {
   );
 }
 
+enum _SignInMode { password, register, code }
+
 class SignInPage extends StatefulWidget {
   const SignInPage({required this.services, super.key});
 
@@ -180,10 +183,18 @@ class _SignInPageState extends State<SignInPage> {
   static const _demoAccountTwoPassword = 'PzDemo-2026-02!';
 
   final _identifierController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmationController = TextEditingController();
+  GlobalKey<FormState> _passwordFormKey = GlobalKey<FormState>();
+  _SignInMode _mode = _SignInMode.password;
+  bool _hidePassword = true;
+  bool _hideConfirmation = true;
+  final _scrollController = ScrollController();
   final _codeController = TextEditingController();
   final _nicknameController = TextEditingController();
   bool _codeRequested = false;
   bool _busy = false;
+  String? _passwordAutofillEmail;
   String? _message;
   Timer? _resendTimer;
   int _resendSeconds = 0;
@@ -191,6 +202,7 @@ class _SignInPageState extends State<SignInPage> {
   @override
   void initState() {
     super.initState();
+    widget.services.session.addListener(_commitPasswordAutofill);
     final errorCode = Uri.base.queryParameters['error_code'];
     if (errorCode != null) {
       _message = switch (errorCode) {
@@ -203,8 +215,12 @@ class _SignInPageState extends State<SignInPage> {
 
   @override
   void dispose() {
+    widget.services.session.removeListener(_commitPasswordAutofill);
     _resendTimer?.cancel();
     _identifierController.dispose();
+    _passwordController.dispose();
+    _confirmationController.dispose();
+    _scrollController.dispose();
     _codeController.dispose();
     _nicknameController.dispose();
     super.dispose();
@@ -260,6 +276,220 @@ class _SignInPageState extends State<SignInPage> {
     });
   }
 
+  void _changeMode(_SignInMode mode) {
+    if (_busy) return;
+    _resendTimer?.cancel();
+    setState(() {
+      _mode = mode;
+      _passwordFormKey = GlobalKey<FormState>();
+      _codeRequested = false;
+      _resendSeconds = 0;
+      _codeController.clear();
+      _passwordController.clear();
+      _confirmationController.clear();
+      _hidePassword = true;
+      _hideConfirmation = true;
+      _message = null;
+    });
+  }
+
+  void _commitPasswordAutofill() {
+    if (!mounted) return;
+    final expectedEmail = _passwordAutofillEmail;
+    if (expectedEmail == null ||
+        widget.services.currentUser?.email?.trim().toLowerCase() !=
+            expectedEmail) {
+      return;
+    }
+    _passwordAutofillEmail = null;
+    TextInput.finishAutofillContext();
+  }
+
+  Future<void> _submitPassword() async {
+    if (_busy) return;
+    if (_passwordFormKey.currentState?.validate() != true) {
+      FocusScope.of(context).unfocus();
+      _showAuthError('请检查标红的输入项');
+      await _scrollToTop();
+      return;
+    }
+    await _run(() async {
+      _passwordAutofillEmail = _identifierController.text.trim().toLowerCase();
+      try {
+        if (_mode == _SignInMode.register) {
+          await widget.services.auth!.registerWithPassword(
+            email: _identifierController.text,
+            password: _passwordController.text,
+            nickname: _nicknameController.text,
+          );
+        } else {
+          await widget.services.auth!.signInWithPassword(
+            email: _identifierController.text,
+            password: _passwordController.text,
+          );
+        }
+        _commitPasswordAutofill();
+      } finally {
+        _passwordAutofillEmail = null;
+      }
+    });
+  }
+
+  Widget _buildPasswordForm() {
+    final registering = _mode == _SignInMode.register;
+    return AutofillGroup(
+      onDisposeAction: AutofillContextAction.cancel,
+      child: Form(
+        key: _passwordFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              key: const ValueKey('auth-email'),
+              controller: _identifierController,
+              enabled: !_busy,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [
+                AutofillHints.username,
+                AutofillHints.email,
+              ],
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: '邮箱',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                final email = value?.trim() ?? '';
+                if (email.isEmpty) return '请输入邮箱';
+                if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+                  return '请输入有效邮箱地址';
+                }
+                return null;
+              },
+            ),
+            if (registering) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const ValueKey('auth-nickname'),
+                controller: _nicknameController,
+                enabled: !_busy,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.nickname],
+                decoration: const InputDecoration(
+                  labelText: '昵称',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final nickname = value?.trim() ?? '';
+                  if (nickname.isEmpty) return '请输入昵称';
+                  if (nickname.length > 40) return '昵称不能超过 40 个字符';
+                  return null;
+                },
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextFormField(
+              key: const ValueKey('auth-password'),
+              controller: _passwordController,
+              enabled: !_busy,
+              obscureText: _hidePassword,
+              enableSuggestions: false,
+              autocorrect: false,
+              textInputAction: registering
+                  ? TextInputAction.next
+                  : TextInputAction.done,
+              autofillHints: [
+                registering
+                    ? AutofillHints.newPassword
+                    : AutofillHints.password,
+              ],
+              decoration: InputDecoration(
+                labelText: '密码',
+                helperText: registering ? '至少 6 位，请妥善保存密码' : null,
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() => _hidePassword = !_hidePassword),
+                  tooltip: _hidePassword ? '显示密码' : '隐藏密码',
+                  icon: Icon(
+                    _hidePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) return '请输入密码';
+                if (registering && value.length < 6) return '密码至少需要 6 位';
+                return null;
+              },
+              onFieldSubmitted: registering ? null : (_) => _submitPassword(),
+            ),
+            if (registering) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const ValueKey('auth-confirm-password'),
+                controller: _confirmationController,
+                enabled: !_busy,
+                obscureText: _hideConfirmation,
+                enableSuggestions: false,
+                autocorrect: false,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.newPassword],
+                decoration: InputDecoration(
+                  labelText: '确认密码',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(
+                            () => _hideConfirmation = !_hideConfirmation,
+                          ),
+                    tooltip: _hideConfirmation ? '显示确认密码' : '隐藏确认密码',
+                    icon: Icon(
+                      _hideConfirmation
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+                validator: (value) => value != _passwordController.text
+                    ? '两次输入的密码不一致'
+                    : value == null || value.isEmpty
+                    ? '请再次输入密码'
+                    : null,
+                onFieldSubmitted: (_) => _submitPassword(),
+              ),
+            ],
+            const SizedBox(height: 18),
+            FilledButton(
+              key: const ValueKey('auth-password-submit'),
+              onPressed: _busy ? null : _submitPassword,
+              child: Text(
+                _busy
+                    ? '正在提交…'
+                    : registering
+                    ? '注册并登录'
+                    : '登录',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () => _changeMode(
+                      registering ? _SignInMode.password : _SignInMode.register,
+                    ),
+              child: Text(registering ? '已有账号？返回登录' : '没有账号？注册'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _signInDemo({required String email, required String password}) {
     return _run(() {
       return widget.services.auth!.signInWithPassword(
@@ -271,6 +501,7 @@ class _SignInPageState extends State<SignInPage> {
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
+    FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
       _message = null;
@@ -278,10 +509,30 @@ class _SignInPageState extends State<SignInPage> {
     try {
       await action();
     } catch (error) {
-      if (mounted) setState(() => _message = mapAppError(error).message);
+      if (!mounted) return;
+      final message = mapAppError(error).message;
+      setState(() => _message = message);
+      _showAuthError(message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _showAuthError(String message) {
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+      );
+  }
+
+  Future<void> _scrollToTop() async {
+    if (!_scrollController.hasClients) return;
+    await _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -290,6 +541,7 @@ class _SignInPageState extends State<SignInPage> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
+            controller: _scrollController,
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
@@ -310,66 +562,90 @@ class _SignInPageState extends State<SignInPage> {
                       const SizedBox(height: 8),
                       const Text('登录后，房间和牌局会自动同步。'),
                       const SizedBox(height: 24),
-                      TextField(
-                        controller: _identifierController,
-                        readOnly: _codeRequested,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: '邮箱或手机号',
-                          border: OutlineInputBorder(),
+                      if (_mode != _SignInMode.code) ...[
+                        Text(
+                          _mode == _SignInMode.register ? '邮箱密码注册' : '邮箱密码登录',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                      ),
-                      if (_codeRequested) ...[
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
+                        _buildPasswordForm(),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _changeMode(_SignInMode.code),
+                          child: const Text('使用验证码登录'),
+                        ),
+                      ] else ...[
                         TextField(
-                          controller: _codeController,
-                          keyboardType: TextInputType.number,
+                          controller: _identifierController,
+                          readOnly: _codeRequested,
+                          keyboardType: TextInputType.emailAddress,
                           decoration: const InputDecoration(
-                            labelText: '验证码',
+                            labelText: '邮箱或手机号',
                             border: OutlineInputBorder(),
                           ),
                         ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            TextButton(
-                              onPressed: _busy ? null : _changeIdentifier,
-                              child: const Text('修改账号'),
+                        if (_codeRequested) ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _codeController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '验证码',
+                              border: OutlineInputBorder(),
                             ),
-                            TextButton(
-                              onPressed: _busy || _resendSeconds > 0
-                                  ? null
-                                  : () => _requestCode(resend: true),
-                              child: Text(
-                                _resendSeconds > 0
-                                    ? '重新发送（$_resendSeconds）'
-                                    : '重新发送',
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton(
+                                onPressed: _busy ? null : _changeIdentifier,
+                                child: const Text('修改账号'),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _nicknameController,
-                          decoration: const InputDecoration(
-                            labelText: '昵称',
-                            border: OutlineInputBorder(),
+                              TextButton(
+                                onPressed: _busy || _resendSeconds > 0
+                                    ? null
+                                    : () => _requestCode(resend: true),
+                                child: Text(
+                                  _resendSeconds > 0
+                                      ? '重新发送（$_resendSeconds）'
+                                      : '重新发送',
+                                ),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _nicknameController,
+                            decoration: const InputDecoration(
+                              labelText: '昵称',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 18),
+                        FilledButton(
+                          onPressed: _busy
+                              ? null
+                              : (_codeRequested ? _verifyCode : _requestCode),
+                          child: Text(_codeRequested ? '登录' : '获取验证码'),
+                        ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _changeMode(_SignInMode.password),
+                          child: const Text('返回密码登录'),
                         ),
                       ],
-                      const SizedBox(height: 18),
-                      FilledButton(
-                        onPressed: _busy
-                            ? null
-                            : (_codeRequested ? _verifyCode : _requestCode),
-                        child: Text(_codeRequested ? '登录' : '获取验证码'),
-                      ),
                       if (_message != null) ...[
                         const SizedBox(height: 12),
-                        Text(
-                          _message!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            _message!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                         ),
                       ],

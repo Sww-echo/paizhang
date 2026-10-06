@@ -15,6 +15,7 @@ import '../infrastructure/backend/app_error_mapper.dart';
 import '../infrastructure/local/app_database.dart';
 import 'room_widgets.dart';
 import 'score_dialogs.dart';
+import 'multi_score_transfer_dialog.dart';
 import 'common_widgets.dart';
 import 'history_pages.dart';
 import 'settlement_page.dart';
@@ -471,12 +472,89 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
     );
     if (transfer == null || !mounted) return;
     await _runRoomAction(() async {
-      await _controller.recordRound(session.id, [
-        ScoreChange(playerId: transfer.fromPlayerId, value: -transfer.amount),
-        ScoreChange(playerId: transfer.toPlayerId, value: transfer.amount),
-      ], note: '${scoreUnitLabel(snapshot.room.scoringMode)}转换');
+      await _controller.transferScores(session.id, {
+        transfer.toPlayerId: transfer.amount,
+      });
       _showSuccess('转换已保存到本机，正在同步');
     });
+  }
+
+  Future<void> _transferToMembers(
+    RoomSnapshot snapshot,
+    GameSession session,
+  ) async {
+    if (_controller.inputDisabledReason(session.id) != null) return;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => MultiScoreTransferDialog(
+        actorId: _controller.actorId,
+        members: snapshot.room.members,
+        profiles: snapshot.profiles,
+        scoringMode: snapshot.room.scoringMode,
+        onSubmit: (amounts) => _controller.runAction(
+          () => _controller.transferScores(session.id, amounts),
+        ),
+      ),
+    );
+    if (saved == true && mounted) _showSuccess('转分已保存到本机，正在同步');
+  }
+
+  Widget _buildScoreActions(
+    BuildContext context,
+    AsyncSnapshot<RoomSnapshot> snapshot,
+  ) {
+    if (!snapshot.hasData) return const SizedBox.shrink();
+    final data = snapshot.data!;
+    final session = _selectedActiveSession(data);
+    final reason = _actionBusy
+        ? '正在处理，请稍候'
+        : _controller.inputDisabledReason(session?.id);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_controller.pendingCount > 0)
+              Text(
+                '${_controller.pendingCount} 条待同步',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            Text(
+              reason ?? '当前牌局：${session!.name}',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: reason == null
+                        ? () => _transferToMembers(data, session!)
+                        : null,
+                    icon: const Icon(Icons.swap_horiz_rounded),
+                    label: const Text('多人转分'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: reason == null
+                        ? () => _recordRound(session!, data)
+                        : null,
+                    icon: const Icon(Icons.edit_note_rounded),
+                    label: const Text('快速录入'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _finishSession(
@@ -794,6 +872,10 @@ class _ConnectedRoomPageState extends State<ConnectedRoomPage> {
             tooltip: '房间管理',
           ),
         ],
+      ),
+      bottomNavigationBar: RoomSnapshotBuilder(
+        controller: _controller,
+        builder: _buildScoreActions,
       ),
       body: RoomSnapshotBuilder(
         controller: _controller,

@@ -59,6 +59,10 @@ void main() {
       debugPrint('checkpoint: confirmed');
       await tester.pumpAndSettle();
       debugPrint('checkpoint: confirmed settled');
+      // The status panel scrolls with the list; return to the top before
+      // asserting it is shown.
+      await tester.drag(find.byType(ListView), const Offset(0, 600));
+      await tester.pumpAndSettle();
       expect(find.textContaining('条本地修改待同步'), findsOneWidget);
       expect(
         await services.database.pendingOperations(actorId: ownerId),

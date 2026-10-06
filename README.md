@@ -2,6 +2,8 @@
 
 Flutter 客户端，使用 Supabase Auth、PostgreSQL、Realtime 和 Drift 本地缓存。
 
+Supabase 配置清单见 [`docs/supabase-config.md`](docs/supabase-config.md)。
+
 ## 本地开发
 
 使用 `.flutter-version` 中固定的 Flutter 版本（当前为 3.47.5），避免本机与 CI 的格式化和代码生成结果不同。
@@ -20,6 +22,28 @@ flutter run \
 ```
 
 这两个参数必须同时提供。publishable key 可以放在前端，禁止把 service-role key 编译进客户端。Web 端的 Drift 本地缓存依赖 `web/sqlite3.wasm` 和 `web/drift_worker.js`，这两个运行时文件已随项目提交。
+
+## 邮箱密码注册与登录
+
+登录页默认使用邮箱 + 密码，点击“没有账号？注册”填写邮箱、昵称、密码和确认密码。注册与密码登录都不调用验证码接口；密码至少 6 位，昵称最多 40 个字符。原邮箱/手机验证码入口仍保留为可选方式，需要单独配置邮件/短信服务。
+
+**免验证码注册需要 Supabase 服务端允许直接建立会话：**
+
+- 本地 `supabase/config.toml` 已显式设置 `[auth.email] enable_signup = true` 和 `enable_confirmations = false`。
+- 托管项目还需在 Supabase Dashboard → Authentication → Sign In / Providers → Email 中开启邮箱注册并关闭 **Confirm email**；本地配置文件不会修改托管项目。
+- 未返回登录 session 时，客户端会提示检查邮箱确认配置，不会宣称已登录或伪造验证状态。重复账号请直接登录，不要反复注册。
+- 关闭确认后，邮箱只是用户填写的登录标识，不能当作已验证的真实联系方式。当前没有接入邮件找回密码，请妥善保存密码。
+- 严禁通过客户端携带 service-role/admin key 来绕过服务端确认设置；真实项目配置调整需由项目管理员确认。
+
+调试包连接真实后端时同样必须提供上面的两个 `--dart-define`，例如：
+
+```bash
+flutter build apk --debug \
+  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+# 指定 adb devices 中的设备，覆盖安装但保留应用数据：
+adb -s <device-id> install -r build/app/outputs/flutter-apk/app-debug.apk
+```
 
 ## 本地验证与 CI
 

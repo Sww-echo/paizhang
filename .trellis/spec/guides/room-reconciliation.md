@@ -5,5 +5,6 @@
 - **冲突确认**使用统一刷新入口，把成功读取保存为远端基线，再用不含 pending 覆盖层的快照生成对比。刷新失败不得拿旧缓存冒充最新值；放弃草稿后仍需对账，离线放弃只恢复已知基线并保留网络错误提示。
 - **写入权限拒绝**不能只把队列标为 rejected。`round_write_forbidden` 同时可能表示成员失权或牌局结束，需要重新核验房间快照；确认仍为成员则更新牌局/权限，确认失权则停用缓存视图。核验暂时失败时权限保持未确认，草稿和底层数据不删除。`round_not_found`、`round_edit_forbidden` 等单条操作错误不能一律当作房间撤权。
 - **刷新必须有界**：远端快照读取默认最多等待 20 秒；超时映射为网络错误、保留可用旧内容并释放并发刷新入口。超时后的晚响应不得写回缓存。所有异步完成仍需校验账号代际。
+- **房间列表共享请求**仅限同一账号和会话代际。账号切换时先清理共享请求、排队刷新和可见状态，再通知新会话；旧请求既不得更新通知器，也不得通过 Future 返回旧账号数据。完成回调只清理自己持有的请求，不能释放新会话的加载入口。首页同时监听列表、加载和错误状态，后台启动请求必须显式捕获失败。
 
-回归入口：`test/application/room_controller_test.dart`、`test/infrastructure/room_sync_coordinator_test.dart`。本地替身与 SQLite 测试不能代替真实 Supabase、多设备或发布验收。
+回归入口：`test/application/app_services_test.dart`、`test/presentation/home_pages_test.dart`、`test/application/room_controller_test.dart`、`test/infrastructure/room_sync_coordinator_test.dart`。本地替身与 SQLite 测试不能代替真实 Supabase、多设备或发布验收。

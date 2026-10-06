@@ -268,6 +268,55 @@ class RoomController extends ChangeNotifier {
     );
   }
 
+  String? inputDisabledReason(String? sessionId) {
+    if (!isCurrent) return '账号已切换，请重新进入房间';
+    final value = snapshot;
+    if (value == null) {
+      // Access errors carry the server's reason (removed, no longer a
+      // member); without one the cached view is simply unconfirmed.
+      return error?.isAccessError == true ? error!.message : '房间访问尚未确认，请刷新后再试';
+    }
+    if (value.room.isClosed) return '房间已关闭，当前仅可查看记录';
+    if (!value.room.hasActiveMember(actorId)) return '你已不再是房间成员';
+    if (error?.isAccessError == true) return '房间访问尚未确认，请刷新后再试';
+    if (!canInput) return '当前仅房主可以录入分数';
+    if (!value.sessions.any(
+      (s) => s.id == sessionId && s.status == GameSessionStatus.active,
+    )) {
+      return '暂无进行中的牌局，请先开始一场';
+    }
+    if (busy) return '正在提交，请稍候';
+    return null;
+  }
+
+  Future<void> transferScores(
+    String sessionId,
+    Map<String, int> amountsByRecipient,
+  ) async {
+    if (amountsByRecipient.isEmpty) {
+      throw const AppError(AppErrorKind.validation, '请至少选择一位接收人');
+    }
+    var total = 0;
+    final changes = <ScoreChange>[];
+    for (final entry in amountsByRecipient.entries) {
+      if (entry.key == actorId) {
+        throw const AppError(AppErrorKind.validation, '不能给自己转分');
+      }
+      if (entry.value <= 0 || entry.value > 2147483647) {
+        throw const AppError(AppErrorKind.validation, '每项分值必须为有效的正整数');
+      }
+      total += entry.value;
+      if (total > 2147483647) {
+        throw const AppError(AppErrorKind.validation, '本次转出总额超出允许范围');
+      }
+      changes.add(ScoreChange(playerId: entry.key, value: entry.value));
+    }
+    await recordRound(sessionId, [
+      ScoreChange(playerId: actorId, value: -total),
+      ...changes,
+    ], note: amountsByRecipient.length == 1 ? '分数转换' : '多人转分');
+  }
+
   Future<void> updateRound(
     Round previous,
     List<ScoreChange> changes, {

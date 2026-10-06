@@ -1,4 +1,7 @@
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'auth_http_client.dart';
 
 class SupabaseBootstrap {
   const SupabaseBootstrap._();
@@ -7,7 +10,11 @@ class SupabaseBootstrap {
     const url = String.fromEnvironment('SUPABASE_URL');
     const publishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
     if (url.isEmpty || publishableKey.isEmpty) return false;
-    await Supabase.initialize(url: url, publishableKey: publishableKey);
+    await Supabase.initialize(
+      url: url,
+      publishableKey: publishableKey,
+      httpClient: AuthHttpClient(http.Client()),
+    );
     return true;
   }
 

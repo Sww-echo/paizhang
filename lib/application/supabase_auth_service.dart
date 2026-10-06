@@ -1,4 +1,5 @@
-import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthException, AuthRetryableFetchException;
 
 import '../domain/auth_gateway.dart';
 import '../domain/models.dart';
@@ -84,7 +85,7 @@ class SupabaseAuthService implements AuthGateway {
   }) async {
     final normalizedEmail = email.trim().toLowerCase();
     if (normalizedEmail.isEmpty || password.isEmpty) {
-      throw const PaizhangException('测试账号信息不完整');
+      throw const PaizhangException('账号和密码不能为空');
     }
 
     try {
@@ -92,7 +93,7 @@ class SupabaseAuthService implements AuthGateway {
         email: normalizedEmail,
         password: password,
       );
-      final authUser = response.user ?? authRepository.currentUser;
+      final authUser = response.session?.user;
       if (authUser == null) {
         throw const PaizhangException('登录未建立有效会话');
       }
@@ -109,6 +110,65 @@ class SupabaseAuthService implements AuthGateway {
         nickname: nickname,
         avatarKey: _avatarKeyFrom(authUser),
         avatarUrl: _avatarUrlFrom(authUser),
+      );
+    } on AuthException catch (error) {
+      throw PaizhangException(_authErrorMessage(error));
+    }
+  }
+
+  @override
+  Future<User> registerWithPassword({
+    required String email,
+    required String password,
+    required String nickname,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedNickname = nickname.trim();
+    if (normalizedEmail.isEmpty) {
+      throw const PaizhangException('账号不能为空');
+    }
+    if (!_isEmail(normalizedEmail)) {
+      throw const PaizhangException('账号必须使用有效邮箱地址');
+    }
+    if (password.length < 6) {
+      throw const PaizhangException('密码至少需要 6 位');
+    }
+    if (normalizedNickname.isEmpty) {
+      throw const PaizhangException('昵称不能为空');
+    }
+    if (normalizedNickname.length > 40) {
+      throw const PaizhangException('昵称不能超过 40 个字符');
+    }
+
+    try {
+      final response = await authRepository.registerWithPassword(
+        email: normalizedEmail,
+        password: password,
+        nickname: normalizedNickname,
+      );
+      final authUser = response.session?.user;
+      if (authUser == null) {
+        throw const PaizhangException(
+          '注册未建立登录会话，请联系管理员检查邮箱确认设置；已有账号请直接登录，不要重复注册。',
+        );
+      }
+
+      await roomRepository.ensureCurrentUserProfile(
+        nickname: normalizedNickname,
+        avatarKey: _avatarKeyFrom(authUser),
+        avatarUrl: _avatarUrlFrom(authUser),
+      );
+      return User(
+        id: authUser.id,
+        nickname: normalizedNickname,
+        avatarKey: _avatarKeyFrom(authUser),
+        avatarUrl: _avatarUrlFrom(authUser),
+        email: authUser.email,
+        phone: authUser.phone,
+      );
+    } on AuthRetryableFetchException {
+      throw const PaizhangException(
+        '网络中断，注册结果未确认。请勿重复注册，可稍后直接尝试登录；若仍无法登录请联系管理员。',
       );
     } on AuthException catch (error) {
       throw PaizhangException(_authErrorMessage(error));
@@ -239,6 +299,9 @@ class SupabaseAuthService implements AuthGateway {
   bool _looksLikePhone(String value) =>
       RegExp(r'^\+?[0-9][0-9\- ]{5,}$').hasMatch(value);
 
+  bool _isEmail(String value) =>
+      RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
+
   String _nicknameFrom(dynamic user) {
     final metadataNickname = user?.userMetadata?['nickname'];
     if (metadataNickname is String && metadataNickname.trim().isNotEmpty) {
@@ -258,6 +321,9 @@ class SupabaseAuthService implements AuthGateway {
   }
 
   String _authErrorMessage(AuthException error) {
+    if (error is AuthRetryableFetchException) {
+      return '网络暂不可用，请检查网络后重试。';
+    }
     switch (error.code) {
       case 'phone_provider_disabled':
       case 'unsupported_phone_provider':
@@ -267,9 +333,16 @@ class SupabaseAuthService implements AuthGateway {
       case 'invalid_otp':
         return '验证码不正确，请检查最新邮件中的 6 位验证码。';
       case 'email_not_confirmed':
-        return '邮箱还未验证，请先完成最新邮件中的验证。';
+        return '该账号尚未完成邮箱确认，请联系管理员检查注册配置。';
       case 'invalid_credentials':
-        return '测试账号或密码不正确。';
+        return '账号或密码不正确。';
+      case 'user_already_exists':
+      case 'email_exists':
+        return '该账号已注册，请直接登录。';
+      case 'weak_password':
+        return '密码强度不足，请使用至少 6 位密码。';
+      case 'signup_disabled':
+        return '当前项目暂未开放账号注册。';
       default:
         return error.message;
     }

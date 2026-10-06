@@ -568,3 +568,60 @@
 
 - 提供隔离 Supabase 环境执行完整迁移、pgTAP 与真实 Auth/Realtime/双客户端断网重启验收，不自动操作生产库。
 - 准备 JDK/Android SDK、正式包名/签名及设备，执行真实 release 合并 Manifest、联网、深链与性能验收。
+
+
+## Session 18: 邮箱密码注册接入与真实后端 debug 构建
+<!-- trellis-session: v=2 fp=eaeede924550e877 -->
+
+**Date**: 2026-10-06
+**Task**: 邮箱密码注册接入与真实后端 debug 构建
+**Branch**: `main`
+
+### Summary
+
+用户最终选择邮箱+密码免验证码注册，并要求构建debug安装手机。接通默认密码登录/注册、确认密码与忙状态校验、注册无session与错误提示；保留可选OTP，新增22项测试。全量91项测试、格式和analyze通过。补齐JDK17、SDK35/36、BuildTools36、NDK28.2和CMake；用户明确同意SDK许可。根assembleDebug额外构建插件AAR反复遇到Maven TLS错误，改用带现有系统代理的:app:assembleDebug成功。新出现的docs/supabase-config.md提供当前公开连接参数，已据此编译并验证配置与签名；APK位于build/app/outputs/flutter-apk/app-debug.apk，138316755字节。2026-10-06只读/auth/v1/settings确认email开启、注册开启，但mailer_autoconfirm=false，未修改远端。首次安装被手机拒绝（INSTALL_FAILED_ABORTED）；用户再次要求ADB安装后，adb install -r 返回 Success，已完成覆盖安装且未清除应用数据。随后手机再次断开，am start 返回 device not found，尚未完成安装后的界面实测。业务改动未提交或推送；日志脚本的自动提交已仅撤回提交本身，内容保留。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- debug APK 已安装成功；手机断开导致未自动启动，重连后或在手机手动打开检查注册界面。项目管理员需关闭托管Email Confirm email，再验证真实注册免验证码。日志保存在build/debug-configured-build.log和build/auth-regression.log。以后仅记录日志、不授权提交时，add_session.py 须传 --no-commit（--commit - 仅表示无关联提交证据，不能关闭自动提交）。
+
+## Session 19: 修复当前变更的四项 review 问题
+
+**Date**: 2026-10-06
+**Task**: 未提交代码 review 修复与整体提交
+**Branch**: `main`
+
+### Summary
+
+用户要求按 review 建议修复并提交当前变更。本轮修复跨账号共享房间请求、首页加载/错误状态不重建、首页启动请求未捕获异常，以及认证成功后密码保存晚于表单销毁四项问题。提交范围包含当前邮箱密码注册、认证超时、首页房间入口、多人转分、Supabase 配置文档及相关回归用例，不推送远程，不修改远端 Auth 设置。
+
+### Main Changes
+
+- AppServices 在发布新会话前清理旧共享请求及排队刷新；共享同一完整 Future，旧响应按账号和代际拒绝，不返回旧账号数据，也不清理新会话请求。
+- 首页合并监听房间列表、加载状态和错误状态；捕获启动请求失败，保留可见错误与重试入口。
+- 密码表单在匹配提交邮箱的会话建立时保存自动填充，不等待资料同步；认证失败或其他账号登录不保存当前密码。
+- 新增 9 项回归用例，覆盖并发共享、账号切换、同账号重新登录、销毁后的晚响应、首页失败重试，以及延迟资料同步时的登录/注册密码保存边界。
+- 更新房间列表 spec，新增密码认证 spec；配置清单保存在 `docs/supabase-config.md`。
+
+### Testing
+
+- [OK] 当前修改文件已整理 Dart 格式，`git diff --check` 通过。
+- [未执行] 遵循用户此前“无需测试”的要求，本轮没有运行测试、静态分析或构建；新增用例仅写入，不能视作通过。
+- [未执行] 没有重新打包、安装 APK 或进行真机验收。
+
+### Status
+
+四项本地修复已实施，随当前变更整体提交。真实环境验收与线上免验证码配置仍未完成。
+
+### Next Steps
+
+- 项目管理员确认并关闭托管 Email 的 Confirm email，验证真实免验证码注册。
+- 获得用户测试授权后执行回归；真机检查登录、密码保存、房间入口及多人转分。

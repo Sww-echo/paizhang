@@ -13,6 +13,11 @@ abstract interface class AuthGateway {
     required String email,
     required String password,
   });
+  Future<User> registerWithPassword({
+    required String email,
+    required String password,
+    required String nickname,
+  });
   Future<void> signOut();
   Future<void> updateNickname({required String nickname});
   Future<void> updateAvatar({

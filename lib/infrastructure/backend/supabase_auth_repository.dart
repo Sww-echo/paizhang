@@ -45,6 +45,18 @@ class SupabaseAuthRepository {
     );
   }
 
+  Future<AuthResponse> registerWithPassword({
+    required String email,
+    required String password,
+    required String nickname,
+  }) {
+    return client.auth.signUp(
+      email: email.trim().toLowerCase(),
+      password: password,
+      data: {'nickname': nickname.trim()},
+    );
+  }
+
   Future<UserResponse> updateNickname(String nickname) {
     return client.auth.updateUser(
       UserAttributes(data: {'nickname': nickname.trim()}),
