@@ -852,3 +852,35 @@
 ### Next Steps
 
 - 处理第三批：先确认历史 profile 时间边界，再补 SQL/pgTAP 和真实环境验收；确认后决定是否修改历史快照 RPC。
+
+
+## Session 27: 第三批历史可见性修复
+<!-- trellis-session: v=2 fp=0dd300056d40bb7a -->
+
+**Date**: 2026-11-01
+**Task**: 第三批历史可见性修复
+**Branch**: `main`
+
+### Summary
+
+完成第三批的历史 profile 可见性修复：新增 20261101090000_history_profile_visibility.sql，历史快照对已离开成员按 joined_at <= left_at 限制 room_members 和 profiles；当前成员仍可看到当前成员目录。扩展 reliability_test.sql 覆盖后来加入成员不可被前成员看到、当前成员可见完整目录和不泄露联系方式。
+
+### Main Changes
+
+- 三批建议已全部有代码或测试落点；第三批真实 Supabase pgTAP 尚未运行，因为本机未安装 supabase CLI。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Python 工具测试 7 项通过；git diff --check 通过；Dart format 通过。SQL 需在 Supabase/pgTAP 环境执行确认。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在 Supabase 测试项目运行迁移和 reliability_test.sql；确认历史 profile 产品规则后再决定是否保留该迁移。
