@@ -625,3 +625,134 @@
 
 - 项目管理员确认并关闭托管 Email 的 Confirm email，验证真实免验证码注册。
 - 获得用户测试授权后执行回归；真机检查登录、密码保存、房间入口及多人转分。
+
+
+## Session 20: UI 方案 v2.1 再次审阅
+<!-- trellis-session: v=2 fp=df2a3d172bb47bfc -->
+
+**Date**: 2026-10-07
+**Task**: UI 方案 v2.1 再次审阅
+**Branch**: `main`
+
+### Summary
+
+保留现有墨绿、奶油、琥珀与日夜配色，用户要求再次审阅当前 UI。当前 docs/ui-proposal.html 已新增头像转分弹窗，不覆盖该更新。本次基于源文件审阅，未修改方案。主要建议：突出金额并压缩弹窗重复信息；首次打开不立即报错；统一记一局与回合称呼；常用金额选择在动态演示中补齐选中态；键盘展开时固定确认栏，弹窗限制焦点并在保存后恢复焦点。账号页面已补齐，优先打磨核心记分界面。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 核对当前弹窗 CSS、静态样机及事件逻辑；未验证浏览器渲染与手机系统键盘。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 若继续优化，保留新弹窗与全部原有色值，优先落实金额层级、校验时机、命名与弹窗焦点。
+
+
+## Session 21: 修复 UI 代码 review 的七项问题
+<!-- trellis-session: v=2 fp=1a0d6430f8fdca4a -->
+
+**Date**: 2026-10-07
+**Task**: 修复 UI 代码 review 的七项问题
+**Branch**: `main`
+
+### Summary
+
+用户要求全部修复当前 UI 变更 review 的七项问题。保留原有色值和 UI 改版，修复管理页面布局与实时更新、历史回合编辑、跨牌局草稿、单人转分结果、资料部分成功后的重试；同时修正编辑累计预览重复计分。
+
+### Main Changes
+
+- PzButton 使用有限最小宽度，管理页监听控制器与操作状态，持续刷新权限、成员、投票、牌局及版本。
+- 编辑仅允许原牌局，保留离开或已从成员快照消失的历史参与者，字段只读，累计预览先扣除原回合分数。
+- 全局录入与多人转分仅在成功保存后清理实际牌局草稿；取消单人转分保留草稿且不提示成功，成功后清理对应收款人金额。
+- 资料编辑以最新成功值为基线，重试仅提交失败或再次修改的字段，头像回滚使用当前成功值，部分成功后返回个人中心刷新资料，保存期间阻止系统返回。
+- 新增完整房间流程及资料部分成功回归测试，并修正布局测试中的退出清理。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter test：150 项全部通过。
+- [OK] flutter analyze：No issues found；git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本轮未提交、推送、构建或进行真机验收。
+
+
+## Session 22: 打包最新 UI 修复的 Android APK
+<!-- trellis-session: v=2 fp=9280d12c6cdffb81 -->
+
+**Date**: 2026-10-07
+**Task**: 打包最新 UI 修复的 Android APK
+**Branch**: `main`
+
+### Summary
+
+用户要求打包 app。沿用现有真实后端客户端参数，生成 Android debug APK，包含最新 UI 改版与 review 修复。
+
+### Main Changes
+
+- android/local.properties 的 SDK 路径原先误指向 platform-tools，改为已安装且已有许可的 /opt/homebrew/share/android-commandlinetools；未修改全局 Flutter 配置或重新接受许可。
+- 通过 JDK 17、系统现有代理及 :app:assembleDebug 构建，避免根 assembleDebug 额外构建插件 AAR；输出 build/app/outputs/flutter-apk/app-debug.apk。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] BUILD SUCCESSFUL；APK 211662352 字节（201.9 MiB），版本 1.0.0+1，支持 arm64-v8a、armeabi-v7a、x86_64。
+- [OK] apksigner 验证 v2 签名通过；包名 com.example.paizhang，INTERNET 权限及启动 Activity 存在；实际编译产物包含项目 URL 和 publishable 客户端 key。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 本轮只完成打包，未进行安装或真机实测；未提交、推送或修改远端配置。
+
+
+## Session 23: 三批可靠性修复计划
+<!-- trellis-session: v=2 fp=ef24f4937f13975c -->
+
+**Date**: 2026-11-01
+**Task**: 三批可靠性修复计划
+**Branch**: `main`
+
+### Summary
+
+完成全项目代码审查并记录三批修复计划；第一批开始实施 AuthHttpClient 超时 abort、房间快照旧响应竞态保护、删除草稿 expectedVersion。当前基线：flutter analyze、flutter test 150 项、Python 7 项、Web 构建均通过。
+
+### Main Changes
+
+- 新增三批修复任务记录，第一批进入实施。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 基线验证已通过：flutter analyze；flutter test 150 项；Python 7 项；flutter build web。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 实施第一批：修复认证底层 abort，补房间缓存代际/版本保护，删除草稿传 expectedVersion，并运行相关测试。
