@@ -6,6 +6,10 @@ import '../../domain/models.dart';
 import '../../domain/room_snapshot.dart';
 import 'app_database.dart';
 
+class _StaleSnapshotWrite implements Exception {
+  const _StaleSnapshotWrite();
+}
+
 class LocalRoomCache {
   LocalRoomCache(this.database, {required this.actorId});
 
@@ -101,89 +105,111 @@ class LocalRoomCache {
     required List<Round> rounds,
     Map<String, User> profiles = const {},
     RoomCloseVoteSummary? closeVote,
+    bool Function()? canWrite,
   }) async {
-    lastWriteCount = 0;
-    await database.transaction(() async {
-      await _saveRoomAndMembers(
-        room,
-        snapshotAt: DateTime.now().toUtc(),
-        closeVoteJson: closeVote == null
-            ? null
-            : jsonEncode(_voteToJson(closeVote)),
-      );
-      final oldSessions = await findGameSessions(room.id);
-      final ids = {
-        ...oldSessions.map((s) => s.id),
-        ...sessions.map((s) => s.id),
-      };
-      final oldRounds =
-          await (database.select(database.cachedRounds)..where(
-                (row) => row.actorId.equals(actorId) & row.sessionId.isIn(ids),
-              ))
-              .get();
-      final roundIds = {
-        ...oldRounds.map((r) => r.id),
-        ...rounds.map((r) => r.id),
-      };
-      final oldScores =
-          await (database.select(database.cachedScoreChanges)..where(
-                (row) =>
-                    row.actorId.equals(actorId) & row.roundId.isIn(roundIds),
-              ))
-              .get();
-      final effectiveRounds = {for (final round in rounds) round.id: round};
-      final visibleSessions = sessions.map((session) => session.id).toSet();
-      for (final old in oldRounds) {
-        final incoming = effectiveRounds[old.id];
-        if (visibleSessions.contains(old.sessionId) &&
-            (incoming == null || old.version > incoming.version)) {
-          effectiveRounds[old.id] = Round(
-            id: old.id,
-            sessionId: old.sessionId,
-            number: old.roundNumber,
-            createdBy: old.createdBy,
-            createdAt: old.createdAt,
-            version: old.version,
-            note: old.note,
-            deletedAt: old.deletedAt,
-            changes: [
-              for (final score in oldScores)
-                if (score.roundId == old.id)
-                  ScoreChange(playerId: score.playerId, value: score.value),
-            ],
-          );
-        }
+    void ensureWritable() {
+      if (canWrite != null && !canWrite()) {
+        throw const _StaleSnapshotWrite();
       }
-      await _syncRows(database.cachedScoreChanges, oldScores, [
-        for (final round in effectiveRounds.values) ..._scoreRows(round),
-      ], (row) => row.id);
-      await _syncRows(
-        database.cachedRounds,
-        oldRounds,
-        effectiveRounds.values.map(_roundRow).toList(),
-        (row) => row.id,
-      );
-      await _syncRows(
-        database.cachedGameSessions,
-        oldSessions,
-        sessions.map(_sessionRow).toList(),
-        (row) => row.id,
-      );
-      if (profiles.isNotEmpty) {
-        final oldUsers =
-            await (database.select(database.cachedUsers)..where(
+    }
+
+    lastWriteCount = 0;
+    try {
+      await database.transaction(() async {
+        ensureWritable();
+        await _saveRoomAndMembers(
+          room,
+          snapshotAt: DateTime.now().toUtc(),
+          closeVoteJson: closeVote == null
+              ? null
+              : jsonEncode(_voteToJson(closeVote)),
+        );
+        ensureWritable();
+        final oldSessions = await findGameSessions(room.id);
+        ensureWritable();
+        final ids = {
+          ...oldSessions.map((s) => s.id),
+          ...sessions.map((s) => s.id),
+        };
+        final oldRounds =
+            await (database.select(database.cachedRounds)..where(
                   (row) =>
-                      row.actorId.equals(actorId) & row.id.isIn(profiles.keys),
+                      row.actorId.equals(actorId) & row.sessionId.isIn(ids),
                 ))
                 .get();
+        ensureWritable();
+        final roundIds = {
+          ...oldRounds.map((r) => r.id),
+          ...rounds.map((r) => r.id),
+        };
+        final oldScores =
+            await (database.select(database.cachedScoreChanges)..where(
+                  (row) =>
+                      row.actorId.equals(actorId) & row.roundId.isIn(roundIds),
+                ))
+                .get();
+        ensureWritable();
+        final effectiveRounds = {for (final round in rounds) round.id: round};
+        final visibleSessions = sessions.map((session) => session.id).toSet();
+        for (final old in oldRounds) {
+          final incoming = effectiveRounds[old.id];
+          if (visibleSessions.contains(old.sessionId) &&
+              (incoming == null || old.version > incoming.version)) {
+            effectiveRounds[old.id] = Round(
+              id: old.id,
+              sessionId: old.sessionId,
+              number: old.roundNumber,
+              createdBy: old.createdBy,
+              createdAt: old.createdAt,
+              version: old.version,
+              note: old.note,
+              deletedAt: old.deletedAt,
+              changes: [
+                for (final score in oldScores)
+                  if (score.roundId == old.id)
+                    ScoreChange(playerId: score.playerId, value: score.value),
+              ],
+            );
+          }
+        }
+        await _syncRows(database.cachedScoreChanges, oldScores, [
+          for (final round in effectiveRounds.values) ..._scoreRows(round),
+        ], (row) => row.id);
+        ensureWritable();
         await _syncRows(
-          database.cachedUsers,
-          oldUsers,
-          profiles.values.map(_userRow).toList(),
+          database.cachedRounds,
+          oldRounds,
+          effectiveRounds.values.map(_roundRow).toList(),
           (row) => row.id,
         );
-      }
-    });
+        ensureWritable();
+        await _syncRows(
+          database.cachedGameSessions,
+          oldSessions,
+          sessions.map(_sessionRow).toList(),
+          (row) => row.id,
+        );
+        if (profiles.isNotEmpty) {
+          final oldUsers =
+              await (database.select(database.cachedUsers)..where(
+                    (row) =>
+                        row.actorId.equals(actorId) &
+                        row.id.isIn(profiles.keys),
+                  ))
+                  .get();
+          await _syncRows(
+            database.cachedUsers,
+            oldUsers,
+            profiles.values.map(_userRow).toList(),
+            (row) => row.id,
+          );
+        }
+        ensureWritable();
+      });
+    } on _StaleSnapshotWrite {
+      // The request became stale while the transaction was in progress. The
+      // transaction is rolled back so an old response cannot overwrite cache.
+    }
   }
 
   Future<void> _saveRoomAndMembers(

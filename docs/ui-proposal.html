@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>牌账 UI 与交互方案 · v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap">
+<style>
+
+/* ── 布局概念：一份规格文档，色板与组件同源；手机样机内嵌为可切换的「日局／夜局」皮肤 ── */
+:root{
+  --bg:#F7F4EC; --surface:#FFFDF8; --sunken:#EFEBE0; --border:#E3DED0;
+  --fg:#17342F; --muted:#5A665F; --subtle:#64706A;
+  --brand:#2F7D68; --brand-ink:#26695A; --hero:#1F4D42; --tint:#D9E9DF; --on-brand:#FFFFFF;
+  --accent:#E7A85B; --accent-ink:#8A5A16; --accent-tint:#F8ECD9; --accent-fill:#B8791D;
+  --win:#A8452F; --win-tint:#F7E3DA;
+  --lose:#3B6E8F; --lose-tint:#DFEAF1;
+  --warn:#8A5A16; --warn-tint:#F6E9D2; --conflict:#9A5B12;
+  --font-sans:'Noto Sans SC',-apple-system,'PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r-chip:8px; --r-ctl:12px; --r-card:16px; --r-sheet:24px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101413; --surface:#171C1A; --sunken:#0B0E0D; --border:#2A322F;
+    --fg:#E8EDE9; --muted:#A3AEA8; --subtle:#87938D;
+    --brand:#4FA98F; --brand-ink:#6FBFA5; --hero:#23473C; --tint:#1E2A26; --on-brand:#0B0E0D;
+    --accent:#E7A85B; --accent-ink:#E7A85B; --accent-tint:#332915; --accent-fill:#D9A03C;
+    --win:#E08A66; --win-tint:#33231D;
+    --lose:#7FB3D0; --lose-tint:#1B2A33;
+    --warn:#DCA45C; --warn-tint:#332915; --conflict:#DCA45C;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101413; --surface:#171C1A; --sunken:#0B0E0D; --border:#2A322F;
+  --fg:#E8EDE9; --muted:#A3AEA8; --subtle:#87938D;
+  --brand:#4FA98F; --brand-ink:#6FBFA5; --hero:#23473C; --tint:#1E2A26; --on-brand:#0B0E0D;
+  --accent:#E7A85B; --accent-ink:#E7A85B; --accent-tint:#332915; --accent-fill:#D9A03C;
+  --win:#E08A66; --win-tint:#33231D;
+  --lose:#7FB3D0; --lose-tint:#1B2A33;
+  --warn:#DCA45C; --warn-tint:#332915; --conflict:#DCA45C;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:var(--font-sans); font-size:15px; line-height:1.7;
+  padding-inline:clamp(16px,4vw,44px); padding-block:0 72px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin-inline:auto}
+h1,h2,h3,h4{text-wrap:balance;margin:0;line-height:1.25}
+p{margin:0}
+a{color:var(--brand-ink)}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+code,.mono{font-family:var(--font-mono);font-size:.86em}
+code{background:var(--sunken);padding:.1em .38em;border-radius:5px;border:1px solid var(--border)}
+.num{font-variant-numeric:tabular-nums}
+
+/* ── 页头 ── */
+header.top{padding-block:56px 34px;border-bottom:1px solid var(--border)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--brand-ink)}
+h1{font-size:clamp(30px,5.2vw,46px);font-weight:800;letter-spacing:-.015em;margin-top:14px}
+.thesis{font-size:clamp(16px,2.1vw,19px);color:var(--muted);max-width:62ch;margin-top:16px;line-height:1.65}
+.meta{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:24px;font-size:12.5px;color:var(--subtle)}
+.meta span{border:1px solid var(--border);border-radius:999px;padding:3px 11px;background:var(--surface)}
+
+section{padding-block:46px 0}
+h2{font-size:clamp(21px,2.7vw,26px);font-weight:800;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+h2 .idx{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--brand-ink);letter-spacing:0}
+.lede{color:var(--muted);max-width:66ch;margin-top:12px}
+h3{font-size:17px;font-weight:700;margin-top:0}
+
+/* ── 现状清单 ── */
+.findings{display:grid;gap:12px;margin-top:24px}
+.find{display:grid;grid-template-columns:auto 1fr;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:16px 18px}
+.find .n{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--brand-ink);padding-top:3px;min-width:1.6em}
+.find h3{font-size:15px;margin-bottom:4px}
+.find p{font-size:13.5px;color:var(--muted)}
+.find .ev{margin-top:8px;font-size:12px;color:var(--subtle)}
+.find .ev code{font-size:11.5px}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1px}
+.tag.bad{background:var(--win-tint);color:var(--win)}
+.tag.warn{background:var(--warn-tint);color:var(--warn)}
+
+/* ── 色板 ── */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:10px;margin-top:22px}
+.sw{border:1px solid var(--border);border-radius:var(--r-ctl);overflow:hidden;background:var(--surface)}
+.sw .chip{height:52px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11.5px;font-weight:600}
+.sw .lbl{padding:8px 11px;font-size:12.5px;font-weight:700;border-top:1px solid var(--border)}
+.sw .use{font-size:11.5px;color:var(--subtle);font-family:var(--font-mono)}
+
+/* ── 通用面板/表格 ── */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:18px 20px;margin-top:20px}
+.tblwrap{overflow-x:auto;margin-top:20px;border:1px solid var(--border);border-radius:var(--r-card);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--subtle);font-weight:700;background:var(--sunken)}
+tr:last-child td{border-bottom:0}
+td.mono,th.mono{font-family:var(--font-mono);font-size:12.5px}
+.ok{color:var(--brand-ink);font-weight:700}
+.bad{color:var(--win);font-weight:700}
+
+/* ── 手机样机 ── */
+.screens{display:flex;flex-wrap:wrap;gap:26px;margin-top:24px;align-items:flex-start}
+figure{margin:0;flex:0 0 auto}
+figcaption{margin-top:12px;font-size:12.5px;color:var(--subtle);max-width:320px;line-height:1.55}
+figcaption b{color:var(--fg);font-weight:700}
+
+/* 样机自己重声明同一套 token，因此组件 CSS 在两套皮肤下通用 */
+.mock{
+  --bg:#F7F4EC; --surface:#FFFDF8; --sunken:#EFEBE0; --border:#E3DED0;
+  --fg:#17342F; --muted:#5A665F; --subtle:#64706A;
+  --brand:#2F7D68; --brand-ink:#26695A; --hero:#1F4D42; --tint:#D9E9DF; --on-brand:#FFFFFF;
+  --accent:#E7A85B; --accent-ink:#8A5A16; --accent-tint:#F8ECD9; --accent-fill:#B8791D;
+  --win:#A8452F; --win-tint:#F7E3DA; --lose:#3B6E8F; --lose-tint:#DFEAF1;
+  --warn:#8A5A16; --warn-tint:#F6E9D2; --conflict:#9A5B12;
+  width:302px;border:1px solid var(--border);border-radius:30px;background:var(--bg);
+  color:var(--fg);font-size:13px;line-height:1.45;overflow:hidden;
+  box-shadow:0 1px 2px rgba(0,0,0,.06),0 14px 34px -18px rgba(23,52,47,.34);
+}
+.mock[data-skin="night"]{
+  --bg:#101413; --surface:#171C1A; --sunken:#0B0E0D; --border:#2A322F;
+  --fg:#E8EDE9; --muted:#A3AEA8; --subtle:#87938D;
+  --brand:#4FA98F; --brand-ink:#6FBFA5; --hero:#23473C; --tint:#1E2A26; --on-brand:#0B0E0D;
+  --accent:#E7A85B; --accent-ink:#E7A85B; --accent-tint:#332915; --accent-fill:#D9A03C;
+  --win:#E08A66; --win-tint:#33231D; --lose:#7FB3D0; --lose-tint:#1B2A33;
+  --warn:#DCA45C; --warn-tint:#332915; --conflict:#DCA45C;
+  box-shadow:0 1px 2px rgba(0,0,0,.4),0 16px 38px -20px rgba(0,0,0,.75);
+}
+.mock .status{display:flex;justify-content:space-between;padding:9px 18px 3px;font-size:10.5px;color:var(--subtle);font-family:var(--font-mono)}
+.mock .bar{display:flex;align-items:center;gap:9px;padding:8px 16px 10px;border-bottom:1px solid var(--border)}
+.mock .bar .ttl{font-weight:800;font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mock .bar .ico{color:var(--muted);font-size:13px;letter-spacing:1px}
+.mock .grab{width:38px;height:4px;border-radius:99px;background:var(--border);margin:9px auto 1px}
+.mock .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.mock .foot{border-top:1px solid var(--border);padding:10px 14px 14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.mock .tabbar{display:flex;border-top:1px solid var(--border);background:var(--surface);padding:7px 4px 9px}
+.mock .tabbar div{flex:1;text-align:center;font-size:10.5px;font-weight:600;color:var(--subtle)}
+.mock .tabbar div.on{color:var(--brand-ink)}
+.mock .tabbar div span{display:block;font-size:13px;line-height:1.3}
+.mock .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:8px 12px 12px;background:var(--sunken);border-top:1px solid var(--border)}
+.mock .keys span{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-chip);text-align:center;padding:7px 0;font-family:var(--font-mono);font-size:13px;color:var(--fg)}
+.mock .keys span.wide{grid-column:span 2}
+
+/* 同步状态条 */
+.sync{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-chip);padding:6px 10px}
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.dot.on{background:var(--brand)}
+.dot.pend{background:var(--accent);box-shadow:inset 0 0 0 2px var(--sunken)}
+.dot.unk{background:transparent;border:1.5px dashed var(--subtle)}
+
+/* 记分台 */
+.board{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden}
+.board .hd{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--border)}
+.board .hd .t{font-weight:700;font-size:13px;flex:1}
+.pill{font-size:10.5px;font-weight:700;padding:2.5px 8px;border-radius:999px;background:var(--tint);color:var(--brand-ink);white-space:nowrap}
+.pill.acc{background:var(--accent-tint);color:var(--accent-ink)}
+.pill.grey{background:var(--sunken);color:var(--muted)}
+.row{display:grid;grid-template-columns:22px 30px 1fr auto;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:0}
+.row .rk{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--subtle);text-align:center}
+.row .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;background:var(--sunken)}
+.row .nm{min-width:0}
+.row .nm b{display:block;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .nm .d{font-size:10.5px;color:var(--muted);font-family:var(--font-mono)}
+.row .tot{font-family:var(--font-mono);font-size:17px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.lead{color:var(--win)}
+.trail{color:var(--lose)}
+.me{background:var(--tint)}
+.metag{font-size:9.5px;font-weight:800;color:var(--brand-ink);border:1px solid var(--brand);border-radius:4px;padding:0 3px;margin-left:5px;vertical-align:1.5px}
+
+/* 按钮 */
+.btn{border-radius:var(--r-ctl);padding:11px 14px;min-height:48px;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:700;text-align:center;border:1px solid transparent}
+.btn.pri{background:var(--brand);color:var(--on-brand)}
+.btn.sec{background:var(--sunken);color:var(--fg);border-color:var(--border)}
+.btn.ghost{background:transparent;color:var(--brand-ink);border-color:var(--border)}
+.btnrow{display:flex;gap:8px}
+.btnrow>*{flex:1;min-width:0}
+
+/* 平账尺 */
+.meter{background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-ctl);padding:11px 13px}
+.meter .top{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;margin-bottom:8px}
+.meter .top .v{font-family:var(--font-mono);font-weight:700;font-size:13px}
+.meter .track{position:relative;height:8px;border-radius:99px;background:var(--surface);border:1px solid var(--border);overflow:hidden}
+.meter .fill{position:absolute;top:0;bottom:0;left:50%}
+.meter .zero{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;background:var(--subtle);opacity:.55}
+.meter .scale{display:flex;justify-content:space-between;font-size:9.5px;color:var(--subtle);font-family:var(--font-mono);margin-top:6px}
+.meter.bal .v{color:var(--brand-ink)}
+.meter.unbal .v{color:var(--warn)}
+
+/* 输入行 */
+.inrow{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:9px}
+.inrow .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;background:var(--sunken)}
+.field{font-family:var(--font-mono);font-size:15px;font-weight:700;text-align:right;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-chip);padding:7px 11px;min-width:76px}
+.field.filled{border-color:var(--brand);background:var(--tint);color:var(--brand-ink)}
+.field.auto{border-style:dashed;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.qchip{font-family:var(--font-mono);font-size:11.5px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--fg);border-radius:999px;padding:3.5px 10px}
+.qchip.hot{background:var(--accent);border-color:var(--accent);color:#3D2A13}
+.note{font-size:11.5px;color:var(--subtle);border-bottom:1px dashed var(--border);padding-bottom:2px;align-self:flex-start}
+
+/* 结算 */
+.card-hero{background:var(--hero);color:#fff;border-radius:var(--r-card);padding:16px;display:flex;flex-direction:column;gap:12px}
+.card-hero .k{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.72}
+.card-hero .big{font-family:var(--font-mono);font-size:26px;font-weight:700}
+.flow{display:flex;align-items:center;gap:8px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-chip);padding:8px 11px}
+.flow .amt{margin-left:auto;font-family:var(--font-mono);font-weight:700}
+.arrow{color:var(--subtle)}
+
+/* 三态演示 */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:20px}
+.state{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-ctl);padding:14px 16px}
+.state .h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;margin-bottom:6px}
+.state p{font-size:12.5px;color:var(--muted)}
+
+/* 点击对比 */
+.taps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}
+.tap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:16px 18px}
+.tap h3{font-size:14px;display:flex;justify-content:space-between;align-items:baseline}
+.tap .cost{font-family:var(--font-mono);font-size:19px;font-weight:700}
+.tap.now .cost{color:var(--win)}
+.tap.new .cost{color:var(--brand-ink)}
+.tap ol{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--muted)}
+.tap li{margin-bottom:3px}
+.tap .note2{font-size:12px;color:var(--subtle);margin-top:10px}
+
+.skinbar{display:flex;align-items:center;gap:8px;margin-top:22px;font-size:12.5px;color:var(--muted)}
+.skinbar button{font-family:var(--font-sans);font-size:12.5px;font-weight:700;padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer}
+.skinbar button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
+ul.plain{margin:12px 0 0;padding-left:19px;color:var(--muted);font-size:13.5px}
+ul.plain li{margin-bottom:6px}
+ul.plain b{color:var(--fg)}
+.callout{border-left:3px solid var(--accent);background:var(--accent-tint);border-radius:0 var(--r-ctl) var(--r-ctl) 0;padding:14px 18px;margin-top:20px}
+.callout.alert{border-left-color:var(--win);background:var(--win-tint)}
+.callout h3{font-size:14.5px;margin-bottom:6px}
+.callout p{font-size:13px;color:var(--muted)}
+.callout p+p{margin-top:8px}
+.phases{counter-reset:ph;margin-top:22px;display:grid;gap:10px}
+.phase{display:grid;grid-template-columns:auto 1fr;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-ctl);padding:14px 16px}
+.phase::before{counter-increment:ph;content:"P" counter(ph);font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--brand-ink);padding-top:2px}
+.phase b{display:block;font-size:14px;margin-bottom:3px}
+.phase p{font-size:13px;color:var(--muted)}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);font-size:12.5px;color:var(--subtle)}
+@media (max-width:420px){ .mock{width:100%;max-width:302px} }
+@media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+
+/* 方案 v2：原有色值保持不变；调整层级、可读性与触控区 */
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}button:disabled{cursor:default;opacity:.65}
+button.btn,button.qchip{appearance:none;font-family:var(--font-sans)}
+a.btn{text-decoration:none}
+.mock{width:100%;font-size:14px}
+figure{width:340px;max-width:100%;flex:0 1 340px;min-width:0}
+figcaption{max-width:340px;font-size:13px;color:var(--muted)}
+.mock .bar .ttl{font-size:16px}
+.mock .body{padding:14px 16px;gap:12px}
+.mock .row{min-height:56px}
+.mock .row .tot{font-size:21px}
+.mock .row .nm .d{font-family:var(--font-sans);font-size:12px}
+.mock .status,.pill{font-size:12px}
+.me .rk,th,.meter .scale{color:var(--muted)}
+.meter .scale{font-size:12px}
+.btn{min-height:48px}.btn.pri{min-height:52px}
+.qchip{min-height:48px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;padding:8px 12px}
+.btn.ghost{border-color:var(--brand-ink)}
+.field{min-height:48px;border-color:var(--muted);font-size:16px}
+.contents{position:sticky;top:0;z-index:10;display:flex;gap:8px;padding:12px 0;overflow-x:auto;background:var(--bg);border-bottom:1px solid var(--border)}
+.contents a{flex:0 0 auto;color:var(--muted);font-size:13px;text-decoration:none;border:1px solid var(--border);border-radius:999px;padding:8px 12px;min-height:44px;display:flex;align-items:center}
+.contents a:hover{color:var(--brand-ink);background:var(--tint)}
+.decision-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:22px}
+.decision{padding:18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card)}
+.decision b{display:block;margin-bottom:7px}.decision p{font-size:13px;color:var(--muted)}
+.section-title{margin:28px 0 12px;font-size:18px}
+.caption-note{font-size:12px;color:var(--muted);line-height:1.6}
+.hint{font-size:12px;color:var(--muted);line-height:1.6}
+.notice{border:1px solid var(--conflict);border-radius:var(--r-ctl);padding:10px 12px;background:var(--warn-tint);color:var(--conflict);font-size:13px}
+.label{font-size:13px;font-weight:700;display:block;margin-bottom:6px}
+.form-field{display:block;width:100%;min-height:48px;padding:10px 12px;border:1px solid var(--muted);border-radius:var(--r-ctl);background:var(--surface);outline-offset:2px;font-size:15px}
+.form-field.auto{border-style:dashed;background:var(--sunken)}
+.form-field:focus{outline:2px solid var(--brand);outline-offset:2px}
+.context{padding:10px 12px;border-radius:var(--r-ctl);background:var(--sunken);color:var(--muted);font-size:12px}
+.context b{display:block;color:var(--fg);font-size:14px;margin-bottom:3px}
+.summary-line{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+.summary-line:last-child{border:0}.summary-line b{font-family:var(--font-mono)}
+.summary-line .source{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.select-row,.entry-row{display:grid;grid-template-columns:1fr 104px;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)}
+.select-row label{min-height:48px;display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer}
+.select-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--brand)}
+.select-row input[type=text],.entry-row input{text-align:right;font-family:var(--font-mono)}
+.entry-row .name{font-size:14px;font-weight:700}.entry-row .source{display:block;font-size:12px;font-weight:400;color:var(--muted)}
+.checkline{display:flex;gap:8px;align-items:center;min-height:48px;font-size:13px}
+.checkline input{width:22px;height:22px;accent-color:var(--brand)}
+.form-error{font-size:13px;line-height:1.5;color:var(--conflict);margin:0;min-height:20px}
+.choice-list{display:flex;flex-direction:column;gap:8px}
+.choice-list .btn{justify-content:flex-start}
+.peer{width:100%;border:0;border-bottom:1px solid var(--border);background:var(--surface);text-align:left;font-family:var(--font-sans);color:var(--fg)}
+.peer:hover{background:var(--sunken)}
+.peer:focus-visible{outline:2px solid var(--brand);outline-offset:-3px}
+.step-strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;font-size:13px;color:var(--muted)}
+.step-strip span{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-chip);padding:6px 10px}
+.mock .tabbar div{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px}
+.demo-guide{max-width:600px;flex:1 1 300px;min-width:0}
+.demo-guide .panel{margin-top:0}
+/* v2.1：快捷转分改为弹窗；遮罩 + 居中对话框 */
+.mock{position:relative}
+.modal{position:absolute;inset:0;z-index:20;border-radius:inherit;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(23,52,47,.45)}
+[data-theme="dark"] .modal{background:rgba(0,0,0,.62)}
+.dialog{width:100%;max-height:100%;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 44px -22px rgba(23,52,47,.55)}
+.dialog h3{margin:0;font-size:16px}
+.dialog .dialog-sub{margin:0;font-size:12px;color:var(--muted);line-height:1.55}
+.dialog .board{background:var(--sunken)}
+.dialog .board .row{min-height:48px}
+.dialog .form-error{min-height:0}
+.dialog .chips .qchip{min-width:64px}
+.dialog-actions{display:flex;gap:8px;border-top:1px solid var(--border);padding-top:12px}
+.dialog-actions .btn{flex:1}
+.dialog-actions .btn.pri{flex:1.4}
+[hidden]{display:none!important}
+.state strong{display:block;margin-bottom:5px}
+.badge{font-size:12px;padding:2px 7px;border-radius:var(--r-chip);background:var(--tint);color:var(--brand-ink)}
+.muted{color:var(--muted)}
+.divider{height:1px;background:var(--border)}
+.card-hero .k{opacity:1;font-size:12px}.card-hero .big{font-size:27px}
+@media(max-width:560px){.contents{margin-inline:-16px;padding-inline:16px}.screens{gap:20px}.panel{padding:16px}header.top{padding-top:34px}.demo-guide{flex-basis:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+<div class="eyebrow">牌账 · 界面与交互方案 · v2</div>
+<h1>点头像转分，整局记分也顺手</h1>
+<p class="thesis">以房间记分台为中心，保留点牌友头像输入金额的快捷操作，补齐多人转分、整局录入、牌局管理与账号流程。颜色沿用现有墨绿、奶油、琥珀，以及原有日／夜两套配色。</p>
+<div class="meta"><span>2026-10-07</span><span>基于当前 Flutter 客户端</span><span>配色色值保持不变</span><span>含核心交互演示与页面规格</span></div>
+</header>
+<nav class="contents" aria-label="方案目录">
+<a href="#overview">结构</a><a href="#demo">操作演示</a><a href="#entry">三种录入</a><a href="#management">房间与牌局</a><a href="#recovery">历史与同步</a><a href="#invite">邀请与加入</a><a href="#account">账号</a><a href="#settle">结算</a><a href="#design">设计基线</a><a href="#delivery">落地与验收</a>
+</nav>
+
+<section id="overview"><h2><span class="idx">01</span>页面结构：入口稳定，快捷操作保留</h2><p class="lede">一级导航保持「牌局 / 房间 / 我的」。房间页、回合记录、结算是二级页面；记分与资料编辑使用面板，返回后保留原页面位置。</p><div class="decision-grid">
+<div class="decision"><b>点头像：我 → 牌友</b><p>直接进入固定方向的金额／积分输入，不再选人或选模式。点自己的头像不发起转分。</p></div>
+<div class="decision"><b>多人转分：选人 + 各自金额</b><p>转出方固定为我；接收人可多选，显示各自变化与合计转出，一次保存为一条回合记录。</p></div>
+<div class="decision"><b>整局录入：各人的净变化</b><p>允许正负分。金额模式必须合计为零，积分模式允许不平账；录入与核对在同一面板内切换。</p></div>
+<div class="decision"><b>输入安全：草稿与结果分开</b><p>返回修改保留输入；切换牌局按账号、牌局、模式隔离草稿。已保存本地与服务端已确认明确区分。</p></div>
+</div><div class="tblwrap"><table><thead><tr><th>一级入口</th><th>主要内容</th><th>二级入口</th></tr></thead><tbody><tr><td>牌局</td><td>进行中的房间、当前牌局、最近结果</td><td>房间记分台、创建／加入、历史</td></tr><tr><td>房间</td><td>所有仍参与的房间、当前状态</td><td>房间管理、成员、牌局列表、邀请</td></tr><tr><td>我的</td><td>头像、昵称、登录邮箱</td><td>资料编辑、历史记录、同步记录、退出登录</td></tr></tbody></table></div><div class="screens"><figure><div class="mock" role="img" aria-label="牌账，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">牌账</span></div><div class="body"><p class="hint">晚上好，Sww</p><div class="board"><div class="hd"><span class="t">周五夜局</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>晚场麻将 · 进行中</b><span class="d">4 位牌友 · 已记 12 回合</span></span><span class="muted"></span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>我的累计</b><span class="d">金额模式</span></span><span class="muted">+240 元</span></div></div><div class="btn pri">继续记分</div><div class="btnrow"><div class="btn sec">创建房间</div><div class="btn sec">加入房间</div></div><div class="board"><div class="hd"><span class="t">最近牌局</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>周末麻将</b><span class="d">已结束 · 8 回合</span></span><span class="muted">−80 元</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>邻里掼蛋</b><span class="d">已结束 · 12 回合</span></span><span class="muted">+120 分</span></div></div></div><div class="tabbar"><div class="on"><span>▦</span>牌局</div><div class="item"><span>☰</span>房间</div><div class="item"><span>☺</span>我的</div></div></div><figcaption>首页先展示正在参与的牌局，再提供创建与加入；最近结果使用自己的累计变化。卡片上的牌局名称与房间名称各自清楚。空状态保留创建与加入。</figcaption></figure></div><div class="panel"><h3>统一称呼与数据范围</h3><p class="lede">房间：周五夜局。牌局：晚场麻将。回合：第 13 回合。记分台总分属于当前选中的牌局；名字下面写「最近回合」，回合记录写「已记 12 回合」。同分并列名次，行顺序用加入顺序稳定排列。</p><p class="lede">「房间 · 牌局名」始终可见，待录入编号显示为「下一回合」。多人同时录入时，最终回合编号以服务端结果为准。</p></div></section>
+
+<section id="demo"><h2><span class="idx">02</span>房间记分台与快捷操作演示</h2><p class="lede">结果按累计分排序，输入顺序固定。主按钮「记一局」，多人转分为次入口，点头像直接进入单人转分。</p>
+<div class="callout"><h3>可以直接点下面的头像和按钮</h3><p>这是方案演示，使用固定示例数据。确认只更新当前页面的演示结果，不连接真实账号、不写入真实房间；刷新页面后重置。</p></div>
+<div class="screens">
+<figure><div class="mock" id="demoPhone"><div class="status"><span>21:42</span><span>方案演示</span></div>
+<div class="bar"><span class="ttl" id="demoTitle">周五夜局</span><button class="qchip" id="demoBack" type="button" hidden>返回</button></div>
+<div class="body">
+<div id="demoRoom">
+<div class="context"><b>当前牌局</b><label for="roomSession" class="label">选择牌局</label><select id="roomSession" class="form-field"><option value="mahjong">晚场麻将</option><option value="cards">周末掼蛋</option></select></div>
+<p class="hint" id="demoSync" role="status" aria-live="polite">演示数据 · 尚未产生待同步记录</p>
+<p class="hint">点牌友头像或所在行，输入金额转分</p>
+<div class="board" id="demoRanking"></div>
+<div class="context"><b id="demoRoundCount">已记 12 回合</b><span id="demoLatest">最近回合：Sww +20，老王 +60，小李 −30，阿强 −50</span></div>
+</div>
+<form id="demoForm" hidden novalidate>
+<div class="context"><b id="demoContext">周五夜局 · 晚场麻将</b><span id="demoNext">预计第 13 回合</span></div>
+<div id="formScope" hidden><label class="label" for="formSession">当前牌局</label><select id="formSession" class="form-field"><option value="mahjong">晚场麻将</option><option value="cards">周末掼蛋</option></select><p class="hint">切换时保留当前示例草稿，另一场的输入独立显示。</p></div>
+
+<div id="multiFields" hidden><p class="hint">转出方：Sww（我） · 勾选接收人并分别填金额</p><div id="multiRows"></div><div class="meter"><span class="label">合计转出</span><b id="multiTotal">0 元</b></div></div>
+<div id="fullFields" hidden><p class="hint">填写每位成员的净变化：正数为赢，负数为输。</p><div id="fullRows"></div><label class="checkline"><input id="autoBalance" type="checkbox" checked>自动补齐最后一位未填成员</label><div class="chips"><button class="qchip" id="splitRemaining" type="button">平摊给未填成员</button></div><p class="hint" id="splitHint"></p><div class="meter"><span class="label">本回合差额</span><b id="fullBalance">尚未填写</b></div></div>
+<p class="form-error" id="demoError" role="status" aria-live="polite"></p>
+</form>
+<div id="demoReview" hidden><div class="context"><b id="reviewContext"></b><span>核对本回合变化与预计累计分数</span></div><div id="reviewRows"></div><p class="hint">确认摘要只读。需要改动时返回输入态，重新校验后再核对。</p></div>
+</div>
+<div class="foot">
+<div id="roomActions"><button class="btn pri" id="openFull" type="button">记一局</button><div class="btnrow"><button class="btn ghost" id="openMulti" type="button">多人转分</button><a class="btn ghost" href="#settle">看结算样机</a></div></div>
+<div class="btnrow" id="entryActions" hidden><button class="btn sec" id="cancelEntry" type="button">返回记分台</button><button class="btn pri" id="entrySubmit" type="submit" form="demoForm">核对</button></div>
+<div class="btnrow" id="reviewActions" hidden><button class="btn sec" id="reviewBack" type="button">返回修改</button><button class="btn pri" id="confirmDemo" type="button">确认保存</button></div>
+<button class="btn ghost" id="resetDemo" type="button">重置演示</button>
+</div>
+<div class="modal" id="transferModal" hidden>
+<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="transferDialogTitle">
+<h3 id="transferDialogTitle">转分给老王</h3>
+<p class="dialog-sub" id="transferDialogContext">周五夜局 · 晚场麻将 · 预计第 13 回合</p>
+<div class="board"><div class="row" style="grid-template-columns:30px 1fr auto"><span class="av">🍃</span><span class="nm"><b>我</b><span class="d">转出方固定</span></span><b id="dialogSenderDelta">—</b></div><div class="row" style="grid-template-columns:30px 1fr auto"><span class="av" id="dialogRecipientAvatar">🔥</span><span class="nm"><b id="dialogRecipientName">老王</b><span class="d">接收方固定</span></span><b class="lead" id="dialogRecipientDelta">—</b></div></div>
+<div><label class="label" for="dialogAmount">金额（元）</label><input class="form-field" id="dialogAmount" type="text" inputmode="numeric" autocomplete="off" placeholder="请输入正整数金额"></div>
+<div class="chips" id="dialogPresets"><button class="qchip" type="button" data-amount="10">10</button><button class="qchip" type="button" data-amount="20">20</button><button class="qchip" type="button" data-amount="50">50</button></div>
+<p class="hint" id="dialogPreview">输入金额后预览双方变化。</p>
+<p class="form-error" id="dialogError" role="status" aria-live="polite"></p>
+<div class="dialog-actions"><button class="btn sec" id="dialogCancel" type="button">取消</button><button class="btn pri" id="dialogConfirm" type="button" disabled>确认转分</button></div>
+</div>
+</div>
+</div><figcaption>可点击演示：点老王头像弹出转分弹窗、给多人不同金额、金额整局自动补齐与平摊、返回修改，以及切换牌局后恢复草稿。</figcaption></figure>
+<div class="demo-guide"><div class="panel"><h3>先试这四条路径</h3><ol class="plain"><li>点老王 → 点 20 → 确认转分，观察累计分数和待同步提示。</li><li>点多人转分 → 老王 20、小李 10 → 核对，合计转出应为 30。</li><li>点记一局 → 老王 +50 → 平摊，检查整数余数落在哪几个人。</li><li>给晚场麻将填一半 → 切到周末掼蛋 → 再切回来，原输入仍在。</li></ol></div>
+<div class="panel"><h3>真实客户端的反馈规则</h3><ul class="plain"><li>保存本地后立即回到记分台，显示「已保存到本机 · 待同步」。</li><li>服务端确认后更新为「已同步」。网络问题保留输入，按队列规则重试。</li><li>提交按钮在保存中禁用；失败回到可修改状态，不关闭面板，不自动重复新建记录。</li><li>系统键盘打开时，金额框、双方变化与确认按钮保持可见；内容滚动，动作栏在键盘上方。</li></ul></div></div></div>
+</section>
+
+<section id="entry"><h2><span class="idx">03</span>三种录入，各自完整</h2><p class="lede">快捷转分一步确认，整局和多人录入进入同面板的只读核对态。视觉组件共用，选择、校验与摘要分别定义。</p><div class="screens"><figure><div class="mock" style="min-height:520px" role="img" aria-label="点头像后的转分弹窗，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">周五夜局</span></div><div class="body" style="opacity:.38"><div class="context"><b>当前牌局</b>晚场麻将 · 已记 12 回合</div><div class="board"><div class="hd"><span class="t">累计</span><span class="pill">金额（元）</span></div><div class="row"><span class="rk">1</span><span class="av">🍃</span><span class="nm"><b>我</b></span><span class="tot lead">+240</span></div><div class="row"><span class="rk">2</span><span class="av">🔥</span><span class="nm"><b>老王</b></span><span class="tot lead">+80</span></div><div class="row"><span class="rk">3</span><span class="av">🌊</span><span class="nm"><b>小李</b></span><span class="tot trail">−120</span></div><div class="row"><span class="rk">4</span><span class="av">⭐</span><span class="nm"><b>阿强</b></span><span class="tot trail">−200</span></div></div></div><div class="foot"><div class="btn pri">记一局</div><div class="btnrow"><div class="btn ghost">转分</div><div class="btn ghost">结算</div></div></div><div class="modal"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="s3DialogTitle"><h3 id="s3DialogTitle">转分给老王</h3><p class="dialog-sub">周五夜局 · 晚场麻将 · 预计第 13 回合</p><div class="board"><div class="row" style="grid-template-columns:30px 1fr auto"><span class="av">🍃</span><span class="nm"><b>我</b><span class="d">转出方固定</span></span><b class="trail">−20</b></div><div class="row" style="grid-template-columns:30px 1fr auto"><span class="av">🔥</span><span class="nm"><b>老王</b><span class="d">接收方固定</span></span><b class="lead">+20</b></div></div><div><span class="label">金额（元）</span><div class="form-field">20</div></div><div class="chips"><span class="qchip">10</span><span class="qchip hot">20</span><span class="qchip">50</span></div><p class="hint">预计累计：Sww +220 · 老王 +100</p><div class="dialog-actions"><div class="btn sec">取消</div><div class="btn pri">确认转分</div></div></div></div></div><figcaption><b>点头像 → 转分弹窗。</b>点老王头像直接弹出这个弹窗，不再切换整页面板。方向固定为我和老王，金额框自动聚焦并弹出系统键盘，常用金额一排可选；输入的同时预览双方变化与预计累计，所属房间与牌局写在副标题。取消或 Esc 关闭并保留草稿，点遮罩不关闭，避免输入中误触。</figcaption></figure><figure><div class="mock" role="img" aria-label="多人转分，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">多人转分</span></div><div class="body"><div class="context"><b>周五夜局 · 晚场麻将</b>转出方：Sww（我）</div><div class="board"><div class="hd"><span class="t">接收人</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>☑ 老王</b><span class="d">接收金额</span></span><span class="muted">20 元</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>☑ 小李</b><span class="d">接收金额</span></span><span class="muted">10 元</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>□ 阿强</b><span class="d">未选择</span></span><span class="muted">—</span></div></div><div class="meter"><span class="label">合计转出</span><b class="mono">30 元</b></div><p class="hint">本回合：Sww −30 · 老王 +20 · 小李 +10</p></div><div class="foot"><div class="btnrow"><div class="btn sec">返回记分台</div></div><div class="btn pri">核对</div></div></div><figcaption><b>多人转分。</b>取消勾选后保留该人的输入，但不计入本次提交；重新勾选可恢复。至少选一人，每项大于零。所有接收人连同我的负变化作为同一条回合记录保存。</figcaption></figure><figure><div class="mock" role="img" aria-label="整局录入，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">整局录入</span></div><div class="body"><div class="context"><b>周五夜局 · 晚场麻将</b>预计第 13 回合 · 金额（元）</div><div class="board"><div class="hd"><span class="t">本回合净变化</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>老王</b><span class="d">手动输入</span></span><span class="muted">+50</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>小李</b><span class="d">平摊填入</span></span><span class="muted">−17</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>阿强</b><span class="d">平摊填入</span></span><span class="muted">−17</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>Sww</b><span class="d">平摊填入</span></span><span class="muted">−16</span></div></div><div class="meter"><span class="label">本回合合计</span><b>0 · 已平账</b></div><p class="hint">50 分给 3 人：先各 16，余下 2 按固定加入顺序各分 1。全部值在核对页明确展示。</p></div><div class="foot"><div class="btnrow"><div class="btn sec">返回记分台</div></div><div class="btn pri">核对</div></div></div><figcaption><b>整局录入。</b>填每人的净变化。颜色之外始终显示正负号；可直接输入，也提供正／负切换与常用值「设为」。金额模式平账才能核对，积分模式只校验输入有效且至少一项非零。</figcaption></figure></div><div class="tblwrap"><table><thead><tr><th>情况</th><th>确定的处理方式</th></tr></thead><tbody><tr><td>未填写与 0</td><td>空白表示尚未指定；明确填写 0 是手动值，不参与自动补齐或平摊。</td></tr><tr><td>自动补齐</td><td>仅金额模式、仅剩一位空白时生效；以虚线框和「自动补齐」文字区分。自动值随其他输入更新；用户修改该值后转为手动值，后续不得覆盖。关闭自动补齐时清空自动值，保留手动值。</td></tr><tr><td>主动平摊</td><td>只分配给空白成员，不覆盖手动值。余数按固定加入顺序每人分配 1 个整数单位，尽量均匀；展示分配明细。再次平摊前，已填值视为受保护，用户可显式清空后重新分配。</td></tr><tr><td>模式与牌局切换</td><td>真实客户端草稿保存在本机，按账号、房间、牌局、模式隔离；单人转分还按接收人区分。单人快捷路径锁定牌局，改牌局先返回记分台；整局和多人可在面板内切换。弹层关闭保留草稿，只有「清空草稿」明确丢弃。退出不删除草稿，原账号再次登录可恢复。演示仅在当前页面保留，刷新重置。</td></tr><tr><td>摘要与实时更新</td><td>摘要为只读快照；返回修改保留数值。成员变化、目标牌局结束或权限变化时，保留输入并要求重新核对。编辑记录仍按原版本提交，冲突转入对账，不能静默覆盖。</td></tr><tr><td>预计总分</td><td>显示「预计累计」，不把未提交变化称为最终结果。其他设备新增回合时更新基线并说明预览变化，不能静默改动本回合输入。</td></tr><tr><td>无效输入</td><td>就地说明正整数、超范围、金额不平账、全零等原因。允许负累计分，不以当前累计分当作余额限制转出。</td></tr></tbody></table></div></section>
+
+<section id="management"><h2><span class="idx">04</span>房间与牌局：管理操作有明确落点</h2><p class="lede">记分台的「当前牌局」可切换；右上「管理」打开房间与牌局管理。创建、开始、结束和关闭房间分别处理，避免把查看结算当作结束。</p><div class="screens"><figure><div class="mock" role="img" aria-label="房间，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">房间</span></div><div class="body"><div class="board"><div class="hd"><span class="t">正在参与</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>周五夜局</b><span class="d">4 人 · 晚场麻将进行中</span></span><span class="muted">进入</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>周末掼蛋</b><span class="d">4 人 · 等待开始牌局</span></span><span class="muted">进入</span></div></div><p class="hint">离开或被移除后的房间放入历史记录，当前列表不混入。</p></div><div class="foot"><div class="btnrow"><div class="btn sec">创建房间</div><div class="btn sec">加入房间</div></div></div><div class="tabbar"><div class="item"><span>▦</span>牌局</div><div class="on"><span>☰</span>房间</div><div class="item"><span>☺</span>我的</div></div></div><figcaption>房间列表保留创建与加入入口，进行中优先。加载失败保留已有列表；空状态直接提供创建与加入。</figcaption></figure><figure><div class="mock" role="img" aria-label="创建房间，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">创建房间</span></div><div class="body"><div><span class="label">房间名称</span><div class="form-field">周五夜局</div></div><div><span class="label">玩法</span><div class="form-field">麻将</div></div><div class="board"><div class="hd"><span class="t">记分方式</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>金额</b><span class="d">每回合必须合计为 0</span></span><span class="muted">已选</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>积分</b><span class="d">允许不平账</span></span><span class="muted">选择</span></div></div><div class="board"><div class="hd"><span class="t">录入权限</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>所有成员</b><span class="d">成员可记录自己的操作</span></span><span class="muted">已选</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>仅房主</b><span class="d">其他成员查看结果</span></span><span class="muted">选择</span></div></div></div><div class="foot"><div class="btnrow"><div class="btn sec">取消</div></div><div class="btn pri">创建房间</div></div></div><figcaption>创建成功进入房间；房间内独立创建牌局。房间名称、玩法、记分模式和录入权限在这里说明，已有回合后记分模式不可修改。</figcaption></figure><figure><div class="mock" role="img" aria-label="周五夜局 · 牌局，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">周五夜局 · 牌局</span></div><div class="body"><div class="board"><div class="hd"><span class="t">晚场麻将</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>进行中</b><span class="d">12 回合 · 当前记分对象</span></span><span class="muted">当前</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>重命名</b><span class="d">仅房主</span></span><span class="muted">›</span></div></div><div class="board"><div class="hd"><span class="t">第二场麻将</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>草稿</b><span class="d">尚未开始</span></span><span class="muted">草稿</span></div></div><div class="board"><div class="hd"><span class="t">周末掼蛋</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>已结束</b><span class="d">8 回合 · 只读</span></span><span class="muted">看结算</span></div></div><div class="notice">结束晚场麻将？<br>结束后停止录入。房主重新打开后才能修正历史。</div></div><div class="foot"><div class="btnrow"><div class="btn sec">继续记分</div><div class="btn sec">确认结束</div></div></div></div><figcaption>草稿：开始／重命名／删除；进行中：记分／历史／结算／结束；已结束：历史／结算，房主可确认后重新打开。结束不清除待同步数据。</figcaption></figure><figure><div class="mock" role="img" aria-label="房间管理，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">房间管理</span></div><div class="body"><div class="board"><div class="hd"><span class="t">房间设置</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>名称与玩法</b><span class="d">周五夜局 · 麻将</span></span><span class="muted">›</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>录入权限</b><span class="d">所有成员</span></span><span class="muted">›</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>邀请牌友</b><span class="d">二维码、邀请码、链接</span></span><span class="muted">›</span></div></div><div class="board"><div class="hd"><span class="t">成员 · 4 人</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>Sww</b><span class="d">房主</span></span><span class="muted">›</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>老王、小李、阿强</b><span class="d">成员 · 管理操作仅房主可用</span></span><span class="muted">›</span></div></div><div class="notice">关闭房间前先结束所有进行中的牌局。历史记录保留。</div></div><div class="foot"><div class="btnrow"><div class="btn sec">发起归档投票</div><div class="btn sec">发起解散投票</div></div></div></div><figcaption>房主可管理设置、成员与移交房主；普通成员可查看成员、参与关闭投票或离开。离开与移除后，已参与期间的历史仍可查。</figcaption></figure><figure><div class="mock" role="img" aria-label="关闭投票，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">关闭投票</span></div><div class="body"><div class="context"><b>归档周五夜局</b>所有进行中牌局已结束</div><div class="board"><div class="hd"><span class="t">本轮同意票</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>1 / 4 人同意</b><span class="d">达到 2 票即归档</span></span><span class="muted">还差 1 票</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>我的选择</b><span class="d">尚未投票</span></span><span class="muted"></span></div></div><div class="notice">同意后可能立即达到关闭门槛。归档后停止记分和管理，历史与结算保留。</div><p class="hint">本轮有效期以提案为准。成员变化或新开牌局后，本轮投票失效。</p></div><div class="foot"><div class="btnrow"><div class="btn sec">不同意</div><div class="btn sec">同意归档</div></div><div class="btn ghost">取消本轮投票</div></div></div><figcaption>目标、所需票数、我的选择与后果同屏。达到门槛的同意动作需明确确认；提案发起者或房主可取消本轮投票。</figcaption></figure></div><div class="tblwrap"><table><thead><tr><th>对象／动作</th><th>权限与确认</th></tr></thead><tbody><tr><td>创建／开始／重命名牌局</td><td>仅房主。草稿创建与开始分开反馈，第二步失败仍保留可开始或可删除的草稿。</td></tr><tr><td>结束／重新打开</td><td>仅房主，前置确认。结束后禁用写操作；待同步变化保持可见，失败项保留原因与恢复入口。存在待同步或冲突时，结束确认说明结果尚未全部确认，不默认放弃输入。</td></tr><tr><td>删除草稿</td><td>仅草稿、仅房主，前置确认；当前没有恢复能力，不显示「删后撤销」。</td></tr><tr><td>关闭投票</td><td>沿用当前「半数即可」规则，4 人房 2 票通过。展示同意票数、所需票数、我的选择和有效期；没有进行中牌局才可发起。</td></tr><tr><td>投票失效</td><td>成员变化、开始新牌局或提案过期时说明原投票已失效，按当前服务端提案重新发起；不得沿用旧票。</td></tr><tr><td>归档／解散／离开</td><td>分别确认含义与后果；归档或解散都保留历史。房主离开前完成房主移交。缓存不代替服务端权限。</td></tr></tbody></table></div></section>
+
+<section id="recovery"><h2><span class="idx">05</span>历史、同步与冲突：输入始终可追溯</h2><p class="lede">连接、队列和权限独立表达，可以同时显示「离线 · 2 条待同步 · 1 条冲突」。需要处理的记录就近提示，并能从「我的 → 同步记录」集中查看。</p><div class="screens"><figure><div class="mock" role="img" aria-label="历史记录，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">历史记录</span></div><div class="body"><div class="board"><div class="hd"><span class="t">最近参与</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>周五夜局</b><span class="d">晚场麻将 · 12 回合 · 2026-10-07</span></span><span class="muted">+240 元</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>周末麻将</b><span class="d">已结束 · 8 回合 · 2026-10-05</span></span><span class="muted">−80 元</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>邻里掼蛋</b><span class="d">已离开房间 · 历史只读</span></span><span class="muted">+120 分</span></div></div><p class="hint">已离开或被移除的房间仍可查看自己参与期间的记录与结算。</p></div><div class="foot"><div class="btn ghost">加载更多房间</div></div></div><figcaption>个人历史先加载房间摘要，展开后查看牌局，再按需加载回合。分页失败保留已加载内容，原位置重试，不清空整个列表。</figcaption></figure><figure><div class="mock" role="img" aria-label="晚场麻将 · 回合记录，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">晚场麻将 · 回合记录</span></div><div class="body"><div class="board"><div class="hd"><span class="t">第 12 回合</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>Sww +20 · 老王 +60</b><span class="d">小李 −30 · 阿强 −50</span></span><span class="muted">›</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>记录者：Sww</b><span class="d">21:41 · 已同步</span></span><span class="muted">编辑 / 撤销</span></div></div><div class="board"><div class="hd"><span class="t">第 11 回合</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>已撤销</b><span class="d">原变化保留 · 不计入总分</span></span><span class="muted">恢复</span></div></div><div class="board"><div class="hd"><span class="t">第 10 回合</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>老王 +30 · Sww −30</b><span class="d">记录者：老王 · 已同步</span></span><span class="muted">只读</span></div></div></div><div class="foot"><div class="btn ghost">查看更多回合</div></div></div><figcaption>回合按时间倒序，显示记录者、备注与同步状态。只有创建者且牌局仍进行中才可修改、撤销或恢复；已结束牌局只读。撤销条快捷恢复，历史行长期保留恢复入口。</figcaption></figure><figure><div class="mock" role="img" aria-label="同步记录，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">同步记录</span></div><div class="body"><div class="board"><div class="hd"><span class="t">周五夜局 · 晚场麻将</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>第 13 回合 · 待同步</b><span class="d">本地保存 · 网络恢复后自动提交</span></span><span class="muted">查看</span></div></div><div class="board"><div class="hd"><span class="t">第 5 回合 · 版本冲突</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>本地输入仍保留</b><span class="d">先读取最新记录，再核对差异</span></span><span class="muted">查看差异</span></div></div><div class="board"><div class="hd"><span class="t">另一场牌局 · 未提交</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>牌局已结束，暂不允许写入</b><span class="d">保留输入；先打开房间核对状态</span></span><span class="muted">打开房间</span></div></div></div><div class="foot"><div class="btnrow"><div class="btn sec">重试可重试项</div></div></div></div><figcaption>按账号展示队列，房间与牌局归属清楚。待同步、等待重试、冲突和业务拒绝分开；同回合有依赖时先处理前一项，无关房间继续同步。</figcaption></figure><figure><div class="mock" role="img" aria-label="核对第 5 回合，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">核对第 5 回合</span></div><div class="body"><div class="context"><b>周五夜局 · 晚场麻将</b>以下服务端值来自本次成功刷新</div><div class="board"><div class="hd"><span class="t">服务端最新</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>老王 +40 · Sww −40</b><span class="d">当前已确认值</span></span><span class="muted"></span></div></div><div class="board"><div class="hd"><span class="t">我的本地草稿</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>老王 +60 · Sww −60</b><span class="d">尚未提交</span></span><span class="muted"></span></div></div><p class="hint">重新提交使用最新版本，再由服务端检查。若刷新失败，保留草稿并显示错误。</p></div><div class="foot"><div class="btn pri">重新提交我的草稿</div><div class="btn ghost">放弃本地修改</div></div></div><figcaption>查看差异不等于重新提交。放弃前说明还会放弃哪些依赖变化；服务器已保存的记录不会被撤销。</figcaption></figure></div><div class="tblwrap"><table><thead><tr><th>连接／业务状态</th><th>画面与可用动作</th></tr></thead><tbody><tr><td>在线、无待处理项</td><td>成功对账后显示「已同步」；在线本身不代表数据已确认。后台刷新保留原内容。</td></tr><tr><td>离线、有可用快照</td><td>显示缓存来源与最近成功同步时间；符合现有本地录入条件时可保存并排队，明确权限重连后核验。</td></tr><tr><td>网络失败</td><td>保留草稿；区分尚未保存本地与已入队。已入队不再次创建回合，网络恢复后由原操作重试。</td></tr><tr><td>仅房主可录入</td><td>按钮旁写「当前仅房主可以录入」，仍可查看记录与结算。</td></tr><tr><td>暂无进行中牌局</td><td>房主看到「创建／开始牌局」，成员看到「等待房主开始牌局」。</td></tr><tr><td>牌局已结束／房间已关闭</td><td>写操作禁用；保留「历史记录」「查看结算」「返回」入口。</td></tr><tr><td>写入权限待重新核验</td><td>暂停受影响视图与写入，保留底层草稿。重新核验成功再按新权限恢复；未确认不能冒充成员授权。</td></tr><tr><td>已被移除／已离开</td><td>当前房间停止操作，提供个人历史入口；单条回合编辑被拒不自动当作整个房间撤权。</td></tr></tbody></table></div></section>
+
+<section id="invite"><h2><span class="idx">06</span>邀请与加入：操作分开，归属可核对</h2><p class="lede">邀请是展示给牌友的内容，加入是自己确认的操作。邀请码输入、扫码和链接只负责识别，最终进入同一张房间确认页。</p><div class="screens"><figure><div class="mock" role="img" aria-label="邀请牌友，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">邀请牌友</span></div><div class="body"><div class="context"><b>周五夜局</b>4 位成员 · 麻将 · 金额</div><div style="padding:22px;background:var(--sunken);border-radius:var(--r-card);text-align:center"><div style="font-size:34px">▦</div><span class="hint">邀请二维码区域</span></div><div class="board"><div class="hd"><span class="t">邀请码</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>PZ-7K4Q</b><span class="d">有效期以实际邀请为准</span></span><span class="muted">复制</span></div></div><div class="btn pri">分享邀请链接</div></div><div class="foot"><div class="btn sec">完成</div></div></div><figcaption>房间内邀请入口展示二维码、邀请码和链接；二维码样机是占位示意，实现使用真实邀请二维码。创建邀请码的权限沿用现有规则。</figcaption></figure><figure><div class="mock" role="img" aria-label="确认加入房间，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">确认加入房间</span></div><div class="body"><div class="context"><b>已识别邀请</b>扫码、邀请码、分享链接进入同一确认页</div><div class="board"><div class="hd"><span class="t">周五夜局</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>玩法：麻将</b><span class="d">4 位成员 · 金额模式</span></span><span class="muted"></span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>当前牌局：晚场麻将</b><span class="d">房间仍可加入</span></span><span class="muted"></span></div></div><p class="hint">确认后成为房间成员，并进入记分台。邀请无效或过期时就地说明，可重新输入或扫码。</p></div><div class="foot"><div class="btnrow"><div class="btn sec">取消</div></div><div class="btn pri">加入房间</div></div></div><figcaption>目标流程：预览 → 明确确认 → 加入。未登录时先登录，随后恢复本次邀请的确认页；暂未加入时不显示「已加入」。</figcaption></figure></div><div class="callout"><h3>实现依赖已明确</h3><p>加入前预览需新增只读的邀请摘要接口。当前 joinByToken 会同时完成加入，因此本方案将预览接口列为独立实现项，先完成接口再启用确认页；不把「已经自动加入」画成「尚待确认加入」。</p><p>未登录 → 登录保留待处理邀请；从 A 切换到 B 清空 A 的邀请上下文。取消加入返回来源页面；临时失败可重试，只有成功加入后才去重。</p></div></section>
+
+<section id="account"><h2><span class="idx">07</span>账号与个人中心：先编辑，再保存</h2><p class="lede">登录、注册、资料、退出使用同一套组件。表单保持清楚的字段标签；错误留在发生的位置，重要结果不会只出现在自动消失的提示里。</p><div class="screens"><figure><div class="mock" role="img" aria-label="登录，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">登录</span></div><div class="body"><div style="font-size:25px;font-weight:800">牌账</div><p class="hint">登录后，房间和牌局会自动同步。</p><div><span class="label">邮箱</span><div class="form-field">name@example.com</div></div><div><span class="label">密码</span><div class="form-field">••••••••</div><p class="hint">可显示密码，支持系统自动填充</p></div><div class="btn pri">登录</div><div class="btn ghost">没有账号？注册</div><div class="divider"></div><p class="hint">其他登录方式</p><div class="btn sec">使用验证码登录</div></div></div><figcaption>邮箱密码为默认路径。输入框始终显示字段名，键盘与自动填充配合；验证码作为可选页面，保留重发倒计时和修改邮箱／手机号。</figcaption></figure><figure><div class="mock" role="img" aria-label="注册，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">注册</span></div><div class="body"><div><span class="label">邮箱</span><div class="form-field">name@example.com</div></div><div><span class="label">昵称</span><div class="form-field">Sww</div><p class="hint">最多 40 个字符</p></div><div><span class="label">密码</span><div class="form-field">••••••••</div><p class="hint">至少 6 位，请妥善保存密码</p></div><div><span class="label">确认密码</span><div class="form-field">••••••</div><p class="form-error">两次输入的密码不一致</p></div></div><div class="foot"><div class="btn pri">注册并登录</div><div class="btn ghost">已有账号？返回登录</div></div></div><figcaption>字段错误就地提示；重复账号引导登录。按钮在提交中禁用，认证成功后的系统密码保存沿用现有边界。</figcaption></figure><figure><div class="mock" role="img" aria-label="验证码登录，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">验证码登录</span></div><div class="body"><div><span class="label">邮箱或手机号</span><div class="form-field">name@example.com</div></div><div><span class="label">验证码</span><div class="form-field">123456</div></div><div class="btnrow"><div class="btn sec">修改账号</div><div class="btn sec">45 秒后重发</div></div><p class="hint">请输入最新验证码。发送失败保留账号，倒计时结束后可重新发送。</p></div><div class="foot"><div class="btn pri">登录</div><div class="btn ghost">返回密码登录</div></div></div><figcaption>可选登录方式沿用现有服务配置。修改邮箱／手机号后清空旧验证码和倒计时上下文；请求中禁止重复发送，验证码过期就地说明。</figcaption></figure><figure><div class="mock" role="img" aria-label="我的，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">我的</span></div><div class="body"><div class="board"><div class="hd"><span class="t">我的资料</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>🍃 Sww</b><span class="d">sww@paizhang.test</span></span><span class="muted">编辑</span></div></div><div class="board"><div class="hd"><span class="t">记录与恢复</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>历史记录</b><span class="d">过往房间、牌局与结算</span></span><span class="muted">›</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>同步记录</b><span class="d">2 条待同步 · 1 条冲突</span></span><span class="muted">›</span></div></div><div class="btn ghost">退出登录</div></div><div class="tabbar"><div class="item"><span>▦</span>牌局</div><div class="item"><span>☰</span>房间</div><div class="on"><span>☺</span>我的</div></div></div><figcaption>资料、历史与同步分组明确。登录邮箱作为账号标识，不因免验证码注册显示「已验证」。未实现的账号删除、修改邮箱、找回密码不画成可用入口。</figcaption></figure><figure><div class="mock" role="img" aria-label="编辑资料，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">编辑资料</span></div><div class="body"><div class="board"><div class="hd"><span class="t">头像</span></div><div class="row" style="grid-template-columns:1fr auto"><span class="nm"><b>🍃 当前头像</b><span class="d">预设头像或选择图片</span></span><span class="muted">选择</span></div></div><div class="btnrow"><div class="btn sec">选择图片</div><div class="btn sec">移除头像</div></div><div><span class="label">昵称</span><div class="form-field">Sww</div><p class="hint">最多 40 个字符</p></div><p class="hint">选择头像、修改昵称先更新本地预览；点保存后才提交。</p></div><div class="foot"><div class="btnrow"><div class="btn sec">取消</div></div><div class="btn pri">保存</div></div></div><figcaption>取消不修改已保存资料。合并编辑为明确的新增交互工作：维护完整草稿，保存成功后再更新展示；上传中的状态可见。</figcaption></figure><figure><div class="mock" role="img" aria-label="退出登录，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">退出登录</span></div><div class="body"><div class="notice"><strong>还有 2 条待同步、1 条需处理</strong><br>这些记录保留在本机。用原账号重新登录后，可继续同步或处理；其他账号不会看到或提交它们。</div><p class="hint">退出前可先查看同步记录。退出登录不会删除账号，也不会清除未同步输入。</p></div><div class="foot"><div class="btn sec">查看同步记录</div><div class="btnrow"><div class="btn sec">取消</div><div class="btn sec">退出登录</div></div></div></div><figcaption>仅在有未同步或失败记录时详细说明。退出操作本身不是删除数据，不按永久删除来渲染；退出失败保留当前页面并提供重试。</figcaption></figure></div><div class="tblwrap"><table><thead><tr><th>状态／动作</th><th>文案与恢复</th></tr></thead><tbody><tr><td>提交中</td><td>按钮显示「正在提交…」并禁用重复操作；输入不被清空。</td></tr><tr><td>注册未建立会话</td><td>「注册未建立登录会话。已有账号请尝试登录；仍无法登录请联系管理员。」页面提供「直接登录」。不宣称已登录，不把邮箱当作已验证联系方式。</td></tr><tr><td>网络中断、结果未知</td><td>「网络中断，注册结果未确认。请勿重复注册，可稍后尝试登录。」保留邮箱，提供直接登录出口；不自动重复注册。</td></tr><tr><td>头像／昵称保存全部失败</td><td>原资料保持，草稿保留；显示失败原因，允许重试。</td></tr><tr><td>头像／昵称部分成功</td><td>当前接口不能保证二者整体回滚。明确写出「昵称已保存，头像未保存」等实际结果，更新已成功的部分，保留失败项草稿；重试仅提交未成功项。</td></tr><tr><td>返回或取消</td><td>未点保存时取消只丢弃本次资料草稿，不调用修改接口。已开始保存时禁止重复提交，离开前先明确当前结果；后端结果未知需重读资料核对。</td></tr></tbody></table></div></section>
+
+<section id="settle"><h2><span class="idx">08</span>结算与分享：大家能直接核对</h2><p class="lede">查看结算不会自动结束牌局。界面优先展示谁给谁多少，完整名次紧随其后；积分模式按原业务规则显示积分结算，不擅自引入兑换比例。</p><div class="screens"><figure><div class="mock" role="img" aria-label="晚场麻将 · 结算，静态样机"><div class="status"><span>21:42</span><span>牌账</span></div><div class="bar"><span class="ttl">晚场麻将 · 结算</span></div><div class="body"><div class="card-hero"><div class="k">周五夜局 · 晚场麻将 · 2026-10-07</div><div class="big">Sww +240 元</div><div>老王 +80 · 小李 −120 · 阿强 −200</div><div>12 回合有效 · 合计 0</div><div>暂定结果 · 2 条待同步</div></div><span class="label">建议转账路径</span><div class="flow"><span>阿强 → Sww</span><span class="amt">200 元</span></div><div class="flow"><span>小李 → 老王</span><span class="amt">80 元</span></div><div class="flow"><span>小李 → Sww</span><span class="amt">40 元</span></div><p class="hint">有未确认变化，核对后再按结果结算。</p></div><div class="foot"><div class="btn pri">分享结算图片</div><div class="btn ghost">复制摘要</div></div></div><figcaption>分享图使用真实昵称，包含房间、牌局、日期、单位、有效回合数与确认状态。预计结果可分享，但「暂定」标识必须在导出图片内。</figcaption></figure></div><div class="tblwrap"><table><thead><tr><th>情况</th><th>展示规则</th></tr></thead><tbody><tr><td>数据已确认</td><td>无本地待同步、冲突或拒绝项，并且该牌局已成功对账，才能标「已确认结果」。牌局仍进行中则标「截至当前」。</td></tr><tr><td>未确认变化</td><td>明显显示「暂定结果」，区分待同步、冲突和未提交数量，写入分享图；单纯「联网」不等于已确认。</td></tr><tr><td>金额不平账</td><td>显示差额与回合修正入口，不生成可误解为已完成的转账方案。</td></tr><tr><td>分享图片</td><td>使用专用卡片，不截取带按钮的整个页面。日期、单位与昵称清楚，长昵称换行，多成员完整展示。</td></tr><tr><td>转账路径</td><td>产品只写「建议转账路径」。算法采用现有匹配规则，不承诺全局最少笔数；不引入实际支付。</td></tr></tbody></table></div></section>
+
+<section id="design"><h2><span class="idx">09</span>设计基线：颜色保持，层级更清楚</h2><p class="lede">本次不修改任何既有配色色值。墨绿用于品牌与主要操作，朱红与靛青用于正负分，琥珀用于待处理状态；日／夜主题使用原有 token。</p>
+<div class="skinbar"><span>页面与样机配色</span><button type="button" id="skinDay" aria-pressed="true">日局</button><button type="button" id="skinNight" aria-pressed="false">夜局</button></div>
+<div class="swatches"><div class="sw"><div class="chip" style="background:#F7F4EC;color:#17342F">#F7F4EC</div><div class="lbl">底色 / bg</div></div><div class="sw"><div class="chip" style="background:#FFFDF8;color:#17342F">#FFFDF8</div><div class="lbl">卡片 / surface</div></div><div class="sw"><div class="chip" style="background:#17342F;color:#F7F4EC">#17342F</div><div class="lbl">正文 / fg</div></div><div class="sw"><div class="chip" style="background:#5A665F;color:#FFFDF8">#5A665F</div><div class="lbl">次要文字 / muted</div></div><div class="sw"><div class="chip" style="background:#2F7D68;color:#FFFFFF">#2F7D68</div><div class="lbl">品牌绿 / brand</div></div><div class="sw"><div class="chip" style="background:#1F4D42;color:#FFFFFF">#1F4D42</div><div class="lbl">主卡片 / hero</div></div><div class="sw"><div class="chip" style="background:#E7A85B;color:#3D2A13">#E7A85B</div><div class="lbl">琥珀 / accent</div></div><div class="sw"><div class="chip" style="background:#A8452F;color:#FFFDF8">#A8452F</div><div class="lbl">正分 / win</div></div><div class="sw"><div class="chip" style="background:#3B6E8F;color:#FFFDF8">#3B6E8F</div><div class="lbl">负分 / lose</div></div><div class="sw"><div class="chip" style="background:#D9E9DF;color:#26695A">#D9E9DF</div><div class="lbl">选中底色 / tint</div></div></div><div class="tblwrap"><table><thead><tr><th>组件</th><th>规格</th></tr></thead><tbody><tr><td>文字</td><td>标题 20–28，正文 15，辅助信息 12–13；分数 20–28，等宽并显式显示 +／−。中文字体落地优先系统字体，HTML 参考字体不等于要求新增字体依赖。</td></tr><tr><td>触控</td><td>按钮、头像点击区、成员行、模式选择与输入框至少 48 × 48；成员行建议 56 高。滑动、长按都有可见替代入口。</td></tr><tr><td>间距与圆角</td><td>保持 4 / 8 / 12 / 16 / 20 / 24 / 32 间距；控件 12、卡片 16、面板顶角 24。发丝线为分组装饰，不承担唯一控件辨识。</td></tr><tr><td>输入与焦点</td><td>输入框使用现有 muted 色描边，聚焦使用 brand；字段名始终可见。数字键盘、正负切换、下一项与确认兼容系统键盘。</td></tr><tr><td>对比度</td><td>低对比背景上的小字改用现有 muted，保持色值不变：浅色 sunken 上 5.04:1，tint 上 4.76:1。普通页面脚注仍使用 subtle，约 4.70:1。不得笼统宣称所有组合均已验证。</td></tr><tr><td>状态表达</td><td>颜色配合文字、符号、边框和动作。正负符号为第一编码；待同步、冲突、只读都写出含义。</td></tr><tr><td>响应式与无障碍</td><td>320 宽、长昵称、6 人及以上、系统字体放大、日／夜主题均需检查。主题切换不重置当前录入；减少动态效果遵循系统设置。</td></tr></tbody></table></div></section>
+
+<section id="delivery"><h2><span class="idx">10</span>落地与验收：界面和行为一起完成</h2><p class="lede">这份方案修改的是设计文档与演示，真实 Flutter 页面、数据库接口与远端配置仍需按下列顺序实施。业务门槛、固定转分方向和离线队列约定沿用当前规则。</p><div class="tblwrap"><table><thead><tr><th>页面／面板</th><th>入口与完整状态</th></tr></thead><tbody><tr><td>牌局首页／房间列表</td><td>加载、空状态、缓存、失败重试、进行中优先、创建／加入入口。</td></tr><tr><td>房间记分台</td><td>当前牌局选择、头像转分、整局／多人入口、名次、最近回合、权限与同步。</td></tr><tr><td>创建房间／牌局管理</td><td>创建、草稿开始／删除、重命名、结束、重开；各动作的权限与失败恢复。</td></tr><tr><td>房间管理／投票</td><td>设置、成员、邀请、房主移交、离开、归档／解散、票数与失效。</td></tr><tr><td>历史／回合记录</td><td>分页、离开成员历史、记录者、备注、只读、编辑、撤销、恢复。</td></tr><tr><td>同步／冲突</td><td>归属、原因、依赖、重试、差异、重新确认、放弃及其确认。</td></tr><tr><td>邀请／加入</td><td>扫码、代码、链接、登录衔接、预览、确认、过期与重试。</td></tr><tr><td>登录／注册／验证码</td><td>表单校验、忙状态、结果未知、直接登录、重发与倒计时。</td></tr><tr><td>我的／资料／退出</td><td>头像与昵称草稿、全部失败／部分成功、历史与同步入口、账号隔离说明。</td></tr><tr><td>结算／分享</td><td>当前与最终、待确认标识、不平账、完整导出与复制。</td></tr></tbody></table></div>
+<div class="phases">
+<div class="phase"><div><b>基础组件与记分台</b><p>抽取现有配色 token、表单与状态组件；当前牌局选择、分数行与头像点击。颜色迁移需逐屏检查，不能称为零风险。</p></div></div>
+<div class="phase"><div><b>三种录入与输入保护</b><p>先保留头像快捷路径，再接多人转分与整局录入；落实只读核对、草稿隔离、自动补齐、平摊与防重复提交。</p></div></div>
+<div class="phase"><div><b>管理、历史与恢复</b><p>补齐房间与牌局生命周期、回合操作、同步队列、权限禁用和冲突对账，验证服务端边界。</p></div></div>
+<div class="phase"><div><b>账号、邀请与结算</b><p>资料编辑明确草稿与部分成功；邀请先实现只读预览再启用确认页；专用分享卡带确认状态。既有邮箱密码与可选验证码链路均保留。</p></div></div>
+</div>
+<div class="callout"><h3>5 秒是目标，三次点击是可核对的路径</h3><p>常用金额快捷转分：点老王头像 → 点 20 → 确认，3 次点击。整局录入所需次数取决于人数、金额和分配方式，不用不存在的 +60 按钮来证明效率。</p><p>真机记录完成时间与错误率，分开测熟练用户常用金额、任意金额、多人不同金额，以及整局不等额录入；本地保存耗时与服务端确认耗时分别记录。</p></div>
+<h3 class="section-title">验收场景</h3>
+<ul class="plain">
+<li>点头像、输入正整数、双方变化正确；不能给自己转分，取消保留本次记分草稿，重复点击不重复入队。</li>
+<li>多人选中／取消／再选中保持金额；整笔一次保存。整局金额合计为 0，积分不强制为 0；手动 0 与空白区别正确。</li>
+<li>自动值改成手动值后不再被覆盖；50 给 3 人可清楚核对余数；返回修改、切换牌局／模式、关闭面板后恢复输入。</li>
+<li>断网、重启、账号 A→B→A、牌局结束、被移除、权限核验失败都保留正确归属的输入；已入队失败不再创建重复回合。</li>
+<li>两设备编辑同一回合触发版本冲突；成功刷新后才展示最新差异，放弃草稿后仍重新对账。</li>
+<li>头像成功／昵称失败与相反情况分别说明，取消不写资料；注册网络中断不自动重复注册，退出不删除待同步记录。</li>
+<li>邀请预览只读，确认前不成为成员；登录恢复邀请，账号切换不串用邀请，过期可重新输入。</li>
+<li>手机键盘展开、窄屏、长昵称、多成员、大字体、日／夜主题检查；导出图的昵称、单位、日期和暂定标识齐全。</li>
+</ul>
+<details class="panel"><summary>源码与业务约束说明</summary><ul class="plain">
+<li>固定转分方向：room_page.dart / score_dialogs.dart；多人整体保存：multi_score_transfer_dialog.dart / RoomController.transferScores。</li>
+<li>当前可恢复的是回合软删除，草稿牌局删除没有恢复接口；只有回合创建者在进行中牌局可修改记录。</li>
+<li>关闭投票沿用当前半数门槛；旧 PRD 严格过半示例待业务文档统一，本次不修改服务端或旧 PRD。</li>
+<li>离线与权限边界遵循 .trellis/spec/guides/room-reconciliation.md；认证与密码保存遵循 password-auth.md。</li>
+<li>本次新增设计工作包含：账号／牌局／模式的未提交表单草稿、合并资料编辑、加入前预览接口、专用分享卡。不能把样机当成现有客户端已经实现。</li>
+</ul></details>
+</section>
+<footer>2026-10-07 · 牌账 UI 方案 v2。原有配色色值全部保留；本页为设计与前端演示，不代表真实账号、房间或远端状态。演示数据刷新重置。实际布局、系统键盘和真实服务端流程需在 Flutter 真机验收。</footer>
+</div>
+<script>
+(function () {
+  'use strict';
+  var LIMIT = 2147483647;
+  var players = [
+    { id: 'wang', name: '老王', avatar: '🔥' },
+    { id: 'li', name: '小李', avatar: '🌊' },
+    { id: 'qiang', name: '阿强', avatar: '⭐' },
+    { id: 'me', name: 'Sww', avatar: '🍃' }
+  ];
+  function integer(raw, positive) {
+    var text = String(raw).trim().replace(/−/g, '-');
+    if (!/^[+-]?\d+$/.test(text)) return null;
+    var value = Number(text);
+    if (!Number.isSafeInteger(value) || value < -2147483648 || value > LIMIT) return null;
+    if (positive && value <= 0) return null;
+    return value;
+  }
+  function split(total, count) {
+    if (!Number.isSafeInteger(total) || !Number.isInteger(count) || count <= 0) {
+      throw new RangeError('请输入整数差额与有效人数');
+    }
+    var sign = Math.sign(total);
+    var absolute = Math.abs(total);
+    var base = Math.floor(absolute / count);
+    var extra = absolute % count;
+    return Array.from({ length: count }, function (_, i) {
+      var value = sign * (base + (i < extra ? 1 : 0));
+      return value === 0 ? 0 : value;
+    });
+  }
+  function freshDraft(mode) {
+    return { mode: mode, raw: {}, selected: [], sources: {}, auto: true };
+  }
+  function fullResult(draft) {
+    var values = {};
+    var missing = [];
+    var sum = 0;
+    for (var i = 0; i < players.length; i++) {
+      var player = players[i];
+      var raw = String(draft.raw[player.id] || '').trim();
+      if (raw === '') { missing.push(player.id); continue; }
+      var value = integer(raw, false);
+      if (value === null) return { valid: false, message: player.name + '：请输入有效的整数净变化', values: values, autoId: null };
+      values[player.id] = value;
+      sum += value;
+    }
+    var autoId = null;
+    if (draft.auto && missing.length === 1 && Object.keys(values).length > 0) {
+      autoId = missing[0];
+      var autoValue = integer(String(-sum), false);
+      if (autoValue === null) return { valid: false, message: '自动补齐超出允许范围，请调整输入', values: values, autoId: null };
+      values[autoId] = autoValue;
+      sum = 0;
+    }
+    var nonzero = Object.values(values).some(function (value) { return value !== 0; });
+    var valid = nonzero && sum === 0;
+    return {
+      valid: valid,
+      values: values,
+      autoId: autoId,
+      sum: sum,
+      message: !nonzero ? '至少填写一项非零变化' : sum !== 0 ? '金额模式还需分配 ' + signed(-sum) + ' 元' : ''
+    };
+  }
+  function transferResult(draft, recipient) {
+    var amount = integer(draft.raw.amount || '', true);
+    if (!recipient || recipient === 'me' || !players.some(function (p) { return p.id === recipient; })) {
+      return { valid: false, message: '请选择其他成员，不能给自己转分' };
+    }
+    if (amount === null) return { valid: false, message: '请输入大于 0 的有效整数金额' };
+    var values = { me: -amount };
+    values[recipient] = amount;
+    return { valid: true, values: values, amount: amount, message: '' };
+  }
+  function multiResult(draft) {
+    if (!draft.selected.length) return { valid: false, message: '请至少选择一位接收人', total: 0 };
+    var values = {};
+    var total = 0;
+    for (var i = 0; i < draft.selected.length; i++) {
+      var id = draft.selected[i];
+      var player = players.find(function (p) { return p.id === id && id !== 'me'; });
+      if (!player || Object.prototype.hasOwnProperty.call(values, id)) {
+        return { valid: false, message: '接收人无效或重复', total: total };
+      }
+      var amount = integer(draft.raw[id] || '', true);
+      if (amount === null) return { valid: false, message: player.name + '：请输入大于 0 的有效整数金额', total: total };
+      values[id] = amount;
+      total += amount;
+      if (total > LIMIT) return { valid: false, message: '合计转出超出允许范围', total: total };
+    }
+    values.me = -total;
+    return { valid: true, values: values, total: total, message: '' };
+  }
+  function applySplit(draft) {
+    var missing = players.filter(function (p) { return String(draft.raw[p.id] || '').trim() === ''; });
+    if (!missing.length) return { valid: false, message: '没有未填成员，现有输入已保留' };
+    var sum = 0;
+    for (var i = 0; i < players.length; i++) {
+      var raw = String(draft.raw[players[i].id] || '').trim();
+      if (raw === '') continue;
+      var value = integer(raw, false);
+      if (value === null) return { valid: false, message: '先修正无效数字，再平摊' };
+      sum += value;
+    }
+    if (sum === 0) return { valid: false, message: '没有需要平摊的差额，现有输入已保留' };
+    var amounts = split(-sum, missing.length);
+    if (amounts.some(function (v) { return integer(String(v), false) === null; })) {
+      return { valid: false, message: '平摊金额超出允许范围' };
+    }
+    var next = {
+      mode: draft.mode,
+      raw: Object.assign({}, draft.raw),
+      selected: draft.selected.slice(),
+      sources: Object.assign({}, draft.sources),
+      auto: draft.auto
+    };
+    missing.forEach(function (p, index) {
+      next.raw[p.id] = String(amounts[index]);
+      next.sources[p.id] = 'split';
+    });
+    return { valid: true, draft: next, message: '平摊明细：' + missing.map(function (p, index) { return p.name + ' ' + signed(amounts[index]); }).join('，') + '。手动值已保留。' };
+  }
+  function signed(value) { return (value > 0 ? '+' : value < 0 ? '−' : '') + Math.abs(value); }
+  function textSafe(value) { return String(value).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+  globalThis.PaizhangDesignMath = Object.freeze({
+    integer: integer, split: split, freshDraft: freshDraft,
+    fullResult: fullResult, transferResult: transferResult,
+    multiResult: multiResult, applySplit: applySplit
+  });
+  if (typeof document === 'undefined') return;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var seeds = {
+    mahjong: { name: '晚场麻将', totals: { me: 240, wang: 80, li: -120, qiang: -200 }, count: 12, pending: 0, latest: 'Sww +20，老王 +60，小李 −30，阿强 −50' },
+    cards: { name: '周末掼蛋', totals: { me: 0, wang: 0, li: 0, qiang: 0 }, count: 0, pending: 0, latest: '尚无回合记录' }
+  };
+  var sessions = JSON.parse(JSON.stringify(seeds));
+  var drafts = new Map();
+  var state = { session: 'mahjong', mode: null, recipient: null, scene: 'room', review: null, busy: false };
+  function key() { return state.session + ':' + state.mode + ':' + (state.recipient || '-'); }
+  function draft() {
+    if (!drafts.has(key())) drafts.set(key(), freshDraft(state.mode));
+    return drafts.get(key());
+  }
+  function currentResult() {
+    var value = draft();
+    return state.mode === 'transfer' ? transferResult(value, state.recipient) : state.mode === 'multi' ? multiResult(value) : fullResult(value);
+  }
+  function display(scene) {
+    state.scene = scene;
+    ['demoRoom','demoForm','demoReview'].forEach(function (id, index) { $(id).hidden = index !== ({ room: 0, entry: 1, review: 2 })[scene]; });
+    $('roomActions').hidden = scene !== 'room';
+    $('entryActions').hidden = scene !== 'entry';
+    $('reviewActions').hidden = scene !== 'review';
+    $('demoBack').hidden = scene === 'room';
+  }
+  function renderRoom() {
+    $('transferModal').hidden = true;
+    display('room');
+    state.review = null;
+    var session = sessions[state.session];
+    $('demoTitle').textContent = '周五夜局';
+    $('roomSession').value = state.session;
+    $('demoSync').textContent = session.pending ? '演示：已生成 ' + session.pending + ' 条待同步记录' : '演示数据 · 尚未产生待同步记录';
+    var sorted = players.slice().sort(function (a, b) { return session.totals[b.id] - session.totals[a.id]; });
+    $('demoRanking').innerHTML = '<div class="hd"><span class="t">' + session.name + '</span><span class="pill">金额（元）</span></div>' + sorted.map(function (p, index) {
+      var rank = sorted.findIndex(function (candidate) { return session.totals[candidate.id] === session.totals[p.id]; }) + 1;
+      var value = session.totals[p.id];
+      var content = '<span class="rk">' + rank + '</span><span class="av">' + p.avatar + '</span><span class="nm"><b>' + (p.id === 'me' ? '我' : p.name) + '</b><span class="d">' + (p.id === 'me' ? 'Sww · 当前账号' : '点头像转分') + '</span></span><span class="tot ' + (value > 0 ? 'lead' : value < 0 ? 'trail' : '') + '">' + signed(value) + '</span>';
+      return p.id === 'me' ? '<div class="row me">' + content + '</div>' : '<button class="row peer" type="button" id="peer-' + p.id + '" aria-label="给' + p.name + '转分">' + content + '</button>';
+    }).join('');
+    players.filter(function (p) { return p.id !== 'me'; }).forEach(function (p) { $('peer-' + p.id).addEventListener('click', function () { open('transfer', p.id); }); });
+    $('demoRoundCount').textContent = '已记 ' + session.count + ' 回合';
+    $('demoLatest').textContent = '最近回合：' + session.latest;
+  }
+  function mountRows() {
+    $('multiRows').innerHTML = players.filter(function (p) { return p.id !== 'me'; }).map(function (p) {
+      return '<div class="select-row"><label><input type="checkbox" id="select-' + p.id + '">' + p.avatar + ' ' + p.name + '</label><input class="form-field" type="text" inputmode="numeric" id="multi-' + p.id + '" aria-label="' + p.name + '接收金额" placeholder="金额"></div>';
+    }).join('');
+    players.filter(function (p) { return p.id !== 'me'; }).forEach(function (p) {
+      $('select-' + p.id).addEventListener('change', function () {
+        var value = draft();
+        value.selected = this.checked ? value.selected.concat(p.id).filter(function (id, i, all) { return all.indexOf(id) === i; }) : value.selected.filter(function (id) { return id !== p.id; });
+        update();
+      });
+      $('multi-' + p.id).addEventListener('input', function () { draft().raw[p.id] = this.value; update(); });
+    });
+    $('fullRows').innerHTML = players.map(function (p) {
+      return '<div class="entry-row"><div class="name"><label for="full-' + p.id + '">' + p.avatar + ' ' + p.name + '</label><span class="source" id="source-' + p.id + '">未填写</span><button class="qchip" type="button" id="sign-' + p.id + '" aria-label="切换' + p.name + '的正负">＋ / −</button></div><input class="form-field" type="text" inputmode="decimal" id="full-' + p.id + '" aria-describedby="source-' + p.id + '" placeholder="净变化"></div>';
+    }).join('');
+    players.forEach(function (p) {
+      $('full-' + p.id).addEventListener('input', function () {
+        draft().raw[p.id] = this.value;
+        draft().sources[p.id] = 'manual';
+        $('splitHint').textContent = '';
+        update();
+      });
+      $('full-' + p.id).addEventListener('blur', function () { update(); });
+      $('sign-' + p.id).addEventListener('click', function () {
+        var raw = $('full-' + p.id).value;
+        var value = integer(raw, false);
+        draft().raw[p.id] = value === null ? '-' : String(value === 0 ? 0 : -value);
+        draft().sources[p.id] = 'manual';
+        update();
+        $('full-' + p.id).focus();
+      });
+    });
+  }
+  var lastPeer = null;
+  function open(mode, recipient) {
+    state.mode = mode;
+    state.recipient = recipient || null;
+    state.review = null;
+    if (mode === 'transfer') { openTransfer(recipient); return; }
+    display('entry');
+    mountRows();
+    $('splitHint').textContent = '';
+    update();
+  }
+  function openTransfer(recipientId) {
+    lastPeer = recipientId;
+    $('transferModal').hidden = false;
+    update();
+    $('dialogAmount').focus({ preventScroll: true });
+  }
+  function closeTransfer() {
+    $('transferModal').hidden = true;
+    var peer = lastPeer ? $('peer-' + lastPeer) : null;
+    if (peer) peer.focus({ preventScroll: true });
+    lastPeer = null;
+  }
+  function update() {
+    var value = draft();
+    var session = sessions[state.session];
+    var result = currentResult();
+    var recipient = players.find(function (p) { return p.id === state.recipient; });
+    $('demoTitle').textContent = state.mode === 'multi' ? '多人转分' : state.mode === 'full' ? '整局录入' : '周五夜局';
+    $('demoContext').textContent = '周五夜局 · ' + session.name;
+    $('demoNext').textContent = '预计第 ' + (session.count + 1) + ' 回合 · 金额（元）';
+    $('formScope').hidden = state.mode === 'transfer';
+    $('formSession').value = state.session;
+    $('multiFields').hidden = state.mode !== 'multi';
+    $('fullFields').hidden = state.mode !== 'full';
+    $('entrySubmit').textContent = '核对';
+    $('entrySubmit').disabled = !result.valid || state.busy;
+    $('demoError').textContent = state.mode === 'transfer' ? '' : (result.message || '');
+    if (state.mode === 'transfer') {
+      $('transferDialogTitle').textContent = '转分给' + recipient.name;
+      $('transferDialogContext').textContent = '周五夜局 · ' + session.name + ' · 预计第 ' + (session.count + 1) + ' 回合';
+      $('dialogRecipientName').textContent = recipient.name;
+      $('dialogRecipientAvatar').textContent = recipient.avatar;
+      if (document.activeElement !== $('dialogAmount')) $('dialogAmount').value = value.raw.amount || '';
+      $('dialogSenderDelta').textContent = result.valid ? signed(-result.amount) : '—';
+      $('dialogRecipientDelta').textContent = result.valid ? signed(result.amount) : '—';
+      $('dialogSenderDelta').className = result.valid ? 'trail' : 'muted';
+      $('dialogRecipientDelta').className = result.valid ? 'lead' : 'muted';
+      $('dialogPreview').textContent = result.valid ? '预计累计：Sww ' + signed(session.totals.me - result.amount) + ' · ' + recipient.name + ' ' + signed(session.totals[recipient.id] + result.amount) : '输入金额后预览双方变化。';
+      $('dialogError').textContent = result.message || '';
+      $('dialogConfirm').disabled = !result.valid || state.busy;
+    }
+    if (state.mode === 'multi') {
+      players.filter(function (p) { return p.id !== 'me'; }).forEach(function (p) {
+        $('select-' + p.id).checked = value.selected.includes(p.id);
+        $('multi-' + p.id).disabled = !value.selected.includes(p.id);
+        if (document.activeElement !== $('multi-' + p.id)) $('multi-' + p.id).value = value.raw[p.id] || '';
+      });
+      $('multiTotal').textContent = result.valid ? result.total + ' 元' : '待填写完整金额';
+    }
+    if (state.mode === 'full') {
+      $('autoBalance').checked = value.auto;
+      players.forEach(function (p) {
+        var automatic = result.autoId === p.id;
+        var splitValue = value.sources[p.id] === 'split';
+        var input = $('full-' + p.id);
+        if (document.activeElement !== input) input.value = automatic ? String(result.values[p.id]) : (value.raw[p.id] || '');
+        input.classList.toggle('auto', automatic || splitValue);
+        input.placeholder = automatic ? '自动 ' + signed(result.values[p.id]) : '净变化';
+        $('source-' + p.id).textContent = automatic ? '自动补齐 ' + signed(result.values[p.id]) + '，可直接修改' : splitValue ? '平摊填入，可直接修改' : String(value.raw[p.id] || '').trim() === '' ? '未填写' : '手动值，不自动覆盖';
+      });
+      $('fullBalance').textContent = result.valid ? '0 · 已平账' : typeof result.sum === 'number' ? signed(result.sum) + ' · ' + result.message : '请修正输入';
+    }
+  }
+  function review() {
+    var result = currentResult();
+    if (!result.valid) { update(); return; }
+    state.review = { session: state.session, key: key(), values: Object.assign({}, result.values) };
+    var session = sessions[state.session];
+    $('reviewContext').textContent = '周五夜局 · ' + session.name + ' · 预计第 ' + (session.count + 1) + ' 回合';
+    $('reviewRows').innerHTML = players.filter(function (p) { return Object.prototype.hasOwnProperty.call(result.values, p.id); }).map(function (p) {
+      var delta = result.values[p.id];
+      return '<div class="summary-line"><span>' + p.avatar + ' ' + p.name + '<span class="source">预计累计 ' + signed(session.totals[p.id] + delta) + '</span></span><b>' + signed(delta) + ' 元</b></div>';
+    }).join('');
+    $('demoTitle').textContent = '核对本回合';
+    display('review');
+  }
+  function save(values, sessionId, draftKey) {
+    if (state.busy) return;
+    state.busy = true;
+    var session = sessions[sessionId];
+    Object.keys(values).forEach(function (id) { session.totals[id] += values[id]; });
+    session.count++;
+    session.pending++;
+    session.latest = players.filter(function (p) { return Object.prototype.hasOwnProperty.call(values, p.id); }).map(function (p) { return p.name + ' ' + signed(values[p.id]); }).join('，');
+    drafts.delete(draftKey);
+    state.session = sessionId;
+    state.busy = false;
+    renderRoom();
+  }
+  $('roomSession').addEventListener('change', function () { state.session = this.value; renderRoom(); });
+  $('formSession').addEventListener('change', function () { state.session = this.value; open(state.mode, state.recipient); });
+  $('openFull').addEventListener('click', function () { open('full'); });
+  $('openMulti').addEventListener('click', function () { open('multi'); });
+  $('dialogAmount').addEventListener('input', function () { draft().raw.amount = this.value; update(); });
+  $('dialogPresets').querySelectorAll('button').forEach(function (button) {
+    button.addEventListener('click', function () { draft().raw.amount = button.dataset.amount; $('dialogAmount').value = button.dataset.amount; update(); });
+  });
+  $('autoBalance').addEventListener('change', function () { draft().auto = this.checked; update(); });
+  $('splitRemaining').addEventListener('click', function () {
+    var result = applySplit(draft());
+    if (result.valid) drafts.set(key(), result.draft);
+    update();
+    $('splitHint').textContent = result.message;
+  });
+  $('demoForm').addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (state.scene !== 'entry') return;
+    var result = currentResult();
+    if (!result.valid || state.busy) { update(); return; }
+    review();
+  });
+  $('confirmDemo').addEventListener('click', function () {
+    if (!state.review || state.scene !== 'review' || state.busy) return;
+    var snapshot = state.review;
+    save(snapshot.values, snapshot.session, snapshot.key);
+  });
+  $('reviewBack').addEventListener('click', function () { display('entry'); state.review = null; update(); });
+  $('cancelEntry').addEventListener('click', renderRoom);
+  $('dialogCancel').addEventListener('click', closeTransfer);
+  $('dialogConfirm').addEventListener('click', function () {
+    var result = currentResult();
+    if (!result.valid || state.busy) { update(); return; }
+    save(result.values, state.session, key());
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && !$('transferModal').hidden) { event.preventDefault(); closeTransfer(); }
+  });
+  $('demoBack').addEventListener('click', function () {
+    if (state.scene === 'review') { display('entry'); state.review = null; update(); }
+    else renderRoom();
+  });
+  $('resetDemo').addEventListener('click', function () {
+    sessions = JSON.parse(JSON.stringify(seeds));
+    drafts.clear();
+    state = { session: 'mahjong', mode: null, recipient: null, scene: 'room', review: null, busy: false };
+    renderRoom();
+  });
+  function applySkin(skin) {
+    document.documentElement.dataset.theme = skin === 'night' ? 'dark' : 'light';
+    document.querySelectorAll('.mock').forEach(function (mock) { mock.dataset.skin = skin; });
+    $('skinDay').setAttribute('aria-pressed', String(skin === 'day'));
+    $('skinNight').setAttribute('aria-pressed', String(skin === 'night'));
+  }
+  function chooseSkin(skin) {
+    applySkin(skin);
+    try { localStorage.setItem('pz-proposal-skin', skin); } catch (_) {}
+  }
+  $('skinDay').addEventListener('click', function () { chooseSkin('day'); });
+  $('skinNight').addEventListener('click', function () { chooseSkin('night'); });
+  var skin = 'day';
+  try { if (localStorage.getItem('pz-proposal-skin') === 'night') skin = 'night'; } catch (_) {}
+  applySkin(skin);
+  renderRoom();
+})();
+
+</script>
+</body>
+</html>

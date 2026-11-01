@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>牌账 · A 暖纸 / C 新拟态 · 5 屏对照</title>
+<link rel="stylesheet" href="compare.css">
+</head>
+<body data-theme="a">
+
+<div class="pagehead">
+  <div>
+    <h1>牌账 · 两套视觉方案对照（A 暖纸 / C 新拟态）</h1>
+    <p>同一套 IA、同一份文案、同一数据结构，只换视觉语言。点上方切换或直接按键盘 <b>A</b> / <b>C</b> 键即时换肤，便于横向比对。手机框为 390×844（与归档原型 853×1844 同比例）。</p>
+  </div>
+  <div style="margin-left:auto;display:flex;flex-direction:column;gap:9px;align-items:flex-end">
+    <div class="sw"><em>A</em>
+      <i style="background:#F7F4EC"></i><i style="background:#FFFDF8"></i><i style="background:#EFEBE0"></i>
+      <i style="background:#17342F"></i><i style="background:#2F7D68"></i><i style="background:#1F4D42"></i>
+      <i style="background:#A8452F"></i><i style="background:#3B6E8F"></i>
+    </div>
+    <div class="sw"><em>C</em>
+      <i style="background:#E9EEEC"></i><i style="background:#EDF2F0"></i><i style="background:#E4EAE7"></i>
+      <i style="background:#2E3A36"></i><i style="background:#5F8D7C"></i><i style="background:#D6E3DD"></i>
+      <i style="background:#B5674F"></i><i style="background:#5E83A0"></i>
+    </div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <span>切换风格</span>
+  <button class="tab on" data-set="a">A · 暖纸</button>
+  <button class="tab" data-set="c">C · 新拟态</button>
+</div>
+
+<div class="stagewrap">
+<div class="stage">
+
+  <!-- ========== 01 首页 ========== -->
+  <figure>
+    <div class="phone">
+      <div class="status"><span>21:04</span><span class="sig">●●●● ⌁ ▮</span></div>
+      <div class="screen">
+        <div class="toprow"><span class="wordmark">牌账</span><span class="date">11月28日 周五</span></div>
+        <div><div class="h1">晚上好，老王</div><div class="sub">今天也把账记清楚。</div></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn primary">创建房间</button>
+          <button class="btn secondary">加入房间</button>
+        </div>
+        <div class="sec">进行中的房间<span class="pill on">2</span><span class="more">房间管理 ›</span></div>
+        <div class="card">
+          <div class="row"><div class="av me">王</div><div class="grow"><div class="nm">周五夜局</div><div class="meta">4 人 · 第 7 回合</div></div><span class="chev">›</span></div>
+          <div class="row"><div class="av">李</div><div class="grow"><div class="nm">周三晚间掼蛋</div><div class="meta">4 人 · 第 12 回合</div></div><span class="chev">›</span></div>
+        </div>
+        <div class="sec">全部房间<span class="more">查看全部 ›</span></div>
+        <div class="card">
+          <div class="row"><div class="grow"><div class="nm">晚场麻将</div><div class="meta">4 人 · 第 8 回合进行中</div></div>
+            <div class="num" style="font-size:15px;color:var(--win)">+128<span style="font-size:10px;color:var(--subtle);font-family:var(--sans);font-weight:600"> 元</span></div></div>
+          <div class="row"><div class="grow"><div class="nm">老张家周末局</div><div class="meta">已结算 · 11月23日</div></div><span class="pill">已结束</span></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>01 · 首页</figcaption>
+  </figure>
+
+  <!-- ========== 02 房间列表 ========== -->
+  <figure>
+    <div class="phone">
+      <div class="status"><span>21:04</span><span class="sig">●●●● ⌁ ▮</span></div>
+      <div class="screen">
+        <div class="topbar"><span class="back">‹</span><span class="ttl">全部房间</span><span class="act">3 个</span></div>
+        <div class="seg"><span class="on">进行中</span><span>已结束</span><span>全部</span></div>
+        <div class="card">
+          <div class="row"><div class="av me">王</div><div class="grow"><div class="nm">周五夜局</div><div class="meta">4 人 · 第 7 回合 · 2 小时前</div></div><span class="pill on">进行中</span></div>
+          <div class="row"><div class="av">李</div><div class="grow"><div class="nm">周三晚间掼蛋</div><div class="meta">4 人 · 第 12 回合 · 昨天</div></div><span class="pill on">进行中</span></div>
+          <div class="row"><div class="av">张</div><div class="grow"><div class="nm">老张家周末局</div><div class="meta">4 人 · 已结算 · 11月23日</div></div><span class="pill">已结束</span></div>
+        </div>
+        <div class="foot"><button class="btn primary">新建房间</button></div>
+      </div>
+    </div>
+    <figcaption>02 · 房间列表</figcaption>
+  </figure>
+
+  <!-- ========== 03 记分板 ========== -->
+  <figure>
+    <div class="phone">
+      <div class="status"><span>21:04</span><span class="sig">●●●● ⌁ ▮</span></div>
+      <div class="screen">
+        <div class="topbar"><span class="back">‹</span><span class="ttl">晚场麻将</span><span class="act">房间管理</span></div>
+        <div style="display:flex;gap:7px;align-items:center">
+          <span class="pill">4 人 · 第 7 回合</span><span class="pill on">已平衡</span>
+        </div>
+        <div class="card">
+          <div class="row"><div class="av me">王</div><div class="grow"><div class="nm">老王 <span class="pill on" style="font-size:10px;padding:1px 6px">我</span></div></div><div class="score win num">+128<span class="u"> 元</span></div></div>
+          <div class="row"><div class="av">李</div><div class="grow"><div class="nm">小李</div></div><div class="score win num">+35<span class="u"> 元</span></div></div>
+          <div class="row"><div class="av">张</div><div class="grow"><div class="nm">老张</div></div><div class="score lose num">−46<span class="u"> 元</span></div></div>
+          <div class="row"><div class="av">陈</div><div class="grow"><div class="nm">小陈</div></div><div class="score lose num">−117<span class="u"> 元</span></div></div>
+        </div>
+        <div class="meter" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span>本局合计</span><b class="num" style="font-size:12.5px">0 元 · 已平衡</b></div>
+          <div class="bar" style="height:5px;border-radius:99px;background:var(--border);overflow:hidden;display:flex">
+            <i style="width:52%;background:var(--win)"></i><i style="width:48%;background:var(--lose)"></i>
+          </div>
+        </div>
+        <div class="foot" style="flex-direction:column;gap:10px">
+          <button class="btn primary">记一局</button>
+          <div style="display:flex;gap:10px">
+            <button class="btn secondary sm" style="flex:1">多人转分</button>
+            <button class="btn secondary sm" style="flex:1">看结算</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>03 · 房间记分板</figcaption>
+  </figure>
+
+  <!-- ========== 04 记一局 ========== -->
+  <figure>
+    <div class="phone">
+      <div class="status"><span>21:04</span><span class="sig">●●●● ⌁ ▮</span></div>
+      <div class="screen">
+        <div class="topbar"><span class="back">✕</span><span class="ttl" style="font-size:14.5px">记一局 · 第 8 回合</span><span class="act">历史</span></div>
+        <div class="lbl">谁给谁</div>
+        <div class="select">小李<span class="arw">→</span>老王</div>
+        <div class="lbl">金额</div>
+        <div class="amount"><span class="num v">40</span><span class="u">元</span></div>
+        <div class="chips"><span class="chip">20</span><span class="chip on">40</span><span class="chip">60</span></div>
+        <div class="chips"><span class="chip">100</span><span class="chip">200</span><span class="chip">平摊</span></div>
+        <div class="meter" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span>本回合合计转出</span><b class="num" style="font-size:12.5px">40 元 · 已平衡</b></div>
+          <div class="bar" style="height:5px;border-radius:99px;background:var(--border);overflow:hidden;display:flex">
+            <i style="width:62%;background:var(--win)"></i><i style="width:38%;background:var(--lose)"></i>
+          </div>
+        </div>
+        <div class="foot"><button class="btn primary">保存这一局</button></div>
+      </div>
+    </div>
+    <figcaption>04 · 记一局面板</figcaption>
+  </figure>
+
+  <!-- ========== 05 结算 ========== -->
+  <figure>
+    <div class="phone">
+      <div class="status"><span>21:04</span><span class="sig">●●●● ⌁ ▮</span></div>
+      <div class="screen">
+        <div class="topbar"><span class="back">‹</span><span class="ttl">结算</span><span class="act">晚场麻将</span></div>
+        <div class="hero">
+          <div class="k">我的净收</div>
+          <div class="v num">+128<span class="u">元</span></div>
+          <div class="s">7 回合有效 · 已确认结果</div>
+        </div>
+        <div class="sec">建议转账路径</div>
+        <div class="card">
+          <div class="tr"><span class="av">李</span>小李<span style="color:var(--subtle)">→</span>老王<span class="amt num">86 元</span></div>
+          <div class="tr"><span class="av">张</span>老张<span style="color:var(--subtle)">→</span>老王<span class="amt num">42 元</span></div>
+        </div>
+        <div class="sec">累计排名</div>
+        <div class="card">
+          <div class="row" style="min-height:44px"><span class="num" style="width:14px;font-size:11.5px;color:var(--subtle)">1</span><div class="av me">王</div><div class="grow"><div class="nm">老王</div></div><div class="score win num" style="font-size:15px">+128<span class="u"> 元</span></div></div>
+          <div class="row" style="min-height:44px"><span class="num" style="width:14px;font-size:11.5px;color:var(--subtle)">2</span><div class="av">李</div><div class="grow"><div class="nm">小李</div></div><div class="score win num" style="font-size:15px">+35<span class="u"> 元</span></div></div>
+          <div class="row" style="min-height:44px"><span class="num" style="width:14px;font-size:11.5px;color:var(--subtle)">3</span><div class="av">张</div><div class="grow"><div class="nm">老张</div></div><div class="score lose num" style="font-size:15px">−46<span class="u"> 元</span></div></div>
+          <div class="row" style="min-height:44px"><span class="num" style="width:14px;font-size:11.5px;color:var(--subtle)">4</span><div class="av">陈</div><div class="grow"><div class="nm">小陈</div></div><div class="score lose num" style="font-size:15px">−117<span class="u"> 元</span></div></div>
+        </div>
+        <div class="foot"><button class="btn secondary sm">分享结算图</button><button class="btn primary sm">完成</button></div>
+      </div>
+    </div>
+    <figcaption>05 · 结算与转账</figcaption>
+  </figure>
+
+</div>
+</div>
+
+<div class="notes">
+  <div>
+    <h3>A · 暖纸 —— 用「边界」分组</h3>
+    底色 <code>#F7F4EC</code>，卡面 <code>#FFFDF8</code>，凹陷 <code>#EFEBE0</code>，全部靠 1px <code>#E3DED0</code> 勾边。
+    零阴影（<code>elevation: 0</code>），数字走等宽 <code>pzMonoStyle</code> + <code>tabular-nums</code>，负号用真 <code>U+2212</code>。
+    实测对比度：正文 12.18:1、muted 5.46:1、正分 5.37:1、负分 5.01:1 —— 全部过 AA；<b>短板是 border 对底仅 1.22:1</b>，卡片边界偏虚。
+  </div>
+  <div>
+    <h3>C · 新拟态 —— 用「光影」分组</h3>
+    单一底色 <code>#E9EEEC</code>，凸起靠左上 <code>#FFF</code> 高光 + 右下 <code>#C9D2CE</code> 暗影，凹陷用 inset 反向成像；圆角放大到 20px，按钮直接胶囊。
+    手感更「实体」。<b>本页已换成修正版色板</b>：初版 正分 3.57 / 负分 3.42 / 品牌 3.20 / muted 3.51 全线不足 AA；修正后 正文 12.66、muted 5.99、subtle 4.82、品牌 4.78、正分 5.15、负分 5.03，最低一处 4.51（品牌字压在凹陷底上）—— <b>全部过 AA</b>，柔和的观感靠阴影与圆角保留，不再拿可读性换。
+  </div>
+  <div>
+    <h3>切换时重点看这四处</h3>
+    ① 03 屏四个分数：A 一眼能读出正负与量级，C 的红/蓝被底色「吃掉」一档；<br>
+    ② 04 屏金额 <code>40</code>：A 是凸在纸上的凹陷槽，C 是压进软胶的凹坑，哪个更「想按」；<br>
+    ③ 05 屏净收主块：A 用深绿 <code>#1F4D42</code> 硬压出视线焦点，C 只能靠浮起高度，焦点弱一格；<br>
+    ④ 卡片之间：A 是描边勾出来的，C 是光影托起来的 —— 这正是 C 值得偷的地方。
+  </div>
+  <div>
+    <h3>关于这份 HTML</h3>
+    手写还原，<b>与生图结果非像素级一致</b>：结构、文案、色值、圆角、间距均按 <code>design.dart</code> 与生成时锁定的 IA 重搭，但字形、留白细节由 CSS 决定。
+    手机框 390×844，与归档 PNG（853×1844）同比例；页面缩放随窗口自适应。
+    样式集中在 <code>compare.css</code>，两套皮肤的差异全部写在 <code>[data-theme="a"]</code> / <code>[data-theme="c"]</code> 两段里，改 tokens 只动那几十行。
+  </div>
+</div>
+
+<script src="compare.js"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 
 import '../application/invite_controller.dart';
 import '../infrastructure/backend/app_error_mapper.dart';
+import 'design.dart';
 import 'home_pages.dart';
 import 'room_page.dart';
 
@@ -467,6 +468,19 @@ class _SignInPageState extends State<SignInPage> {
             FilledButton(
               key: const ValueKey('auth-password-submit'),
               onPressed: _busy ? null : _submitPassword,
+              style: FilledButton.styleFrom(
+                backgroundColor: PzColors.of(context).brand,
+                foregroundColor: PzColors.of(context).onBrand,
+                minimumSize: const Size.fromHeight(52),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: PzRadius.controlAll,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               child: Text(
                 _busy
                     ? '正在提交…'
@@ -545,8 +559,15 @@ class _SignInPageState extends State<SignInPage> {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
-              child: Card(
-                elevation: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: PzColors.of(context).surface,
+                  borderRadius: BorderRadius.circular(PzRadius.md),
+                  boxShadow: PzShadow.of(
+                    PzDepth.raise2,
+                    Theme.of(context).brightness,
+                  ),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
@@ -555,12 +576,12 @@ class _SignInPageState extends State<SignInPage> {
                       const Text(
                         '牌账',
                         style: TextStyle(
-                          fontSize: 32,
+                          fontSize: 28,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text('登录后，房间和牌局会自动同步。'),
+                      const PzHint('登录后，房间和牌局会自动同步。'),
                       const SizedBox(height: 24),
                       if (_mode != _SignInMode.code) ...[
                         Text(
@@ -569,6 +590,9 @@ class _SignInPageState extends State<SignInPage> {
                         ),
                         const SizedBox(height: 16),
                         _buildPasswordForm(),
+                        const Divider(height: 28),
+                        const PzHint('其他登录方式'),
+                        const SizedBox(height: 4),
                         TextButton(
                           onPressed: _busy
                               ? null
@@ -628,6 +652,19 @@ class _SignInPageState extends State<SignInPage> {
                           onPressed: _busy
                               ? null
                               : (_codeRequested ? _verifyCode : _requestCode),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: PzColors.of(context).brand,
+                            foregroundColor: PzColors.of(context).onBrand,
+                            minimumSize: const Size.fromHeight(52),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: PzRadius.controlAll,
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                           child: Text(_codeRequested ? '登录' : '获取验证码'),
                         ),
                         TextButton(
@@ -644,7 +681,8 @@ class _SignInPageState extends State<SignInPage> {
                           child: Text(
                             _message!,
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
+                              fontSize: 13,
+                              color: PzColors.of(context).brandInk,
                             ),
                           ),
                         ),

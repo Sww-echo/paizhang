@@ -87,6 +87,7 @@ class RoomSyncCoordinator {
           rounds: snapshot.rounds,
           profiles: snapshot.profiles,
           closeVote: snapshot.closeVote,
+          canWrite: () => generation == _generation && isCurrent(),
         );
         if (generation != _generation || !isCurrent()) return;
         await onRefresh?.call(snapshot);

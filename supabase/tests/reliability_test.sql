@@ -7,13 +7,15 @@ insert into auth.users(id, email, raw_user_meta_data) values
   ('10000000-0000-4000-8000-000000000001', 'owner@example.invalid', '{"nickname":"owner"}'),
   ('10000000-0000-4000-8000-000000000002', 'member@example.invalid', '{"nickname":"member"}'),
   ('10000000-0000-4000-8000-000000000003', 'former@example.invalid', '{"nickname":"former"}'),
-  ('10000000-0000-4000-8000-000000000004', 'outsider@example.invalid', '{"nickname":"outsider"}');
+  ('10000000-0000-4000-8000-000000000004', 'outsider@example.invalid', '{"nickname":"outsider"}'),
+  ('10000000-0000-4000-8000-000000000005', 'later@example.invalid', '{"nickname":"later"}');
 insert into public.rooms(id, owner_id, name, game_type, scoring_mode, status)
 values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'test room', 'test', 'money', 'active');
 insert into public.room_members(room_id, user_id, role, joined_at, left_at) values
   ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'owner', now() - interval '2 days', null),
   ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', 'member', now() - interval '2 days', null),
-  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000003', 'member', now() - interval '2 days', now() - interval '1 hour');
+  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000003', 'member', now() - interval '2 days', now() - interval '1 hour'),
+  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000005', 'member', now() - interval '30 minutes', null);
 insert into public.game_sessions(id, room_id, name, status, created_at, started_at) values
   ('30000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'old session', 'active', now() - interval '1 day', now() - interval '1 day'),
   ('30000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000001', 'later session', 'active', now() - interval '30 minutes', now() - interval '30 minutes');
@@ -24,7 +26,12 @@ insert into public.score_changes(round_id, player_id, created_by, value)
 select round.id, member.user_id, round.created_by,
   case when member.role = 'owner' then 5 else -5 end
 from public.rounds round join public.room_members member
-  on member.room_id = '20000000-0000-4000-8000-000000000001' and member.left_at is null
+  on member.room_id = '20000000-0000-4000-8000-000000000001'
+  and member.left_at is null
+  and member.user_id in (
+    '10000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002'
+  )
 where round.id in ('40000000-0000-4000-8000-000000000099', '40000000-0000-4000-8000-000000000098');
 
 set local role authenticated;
@@ -111,6 +118,9 @@ select is(jsonb_array_length(public.get_room_history_snapshot('20000000-0000-400
 select ok(not exists(select 1 from jsonb_array_elements(public.get_room_history_snapshot(
   '20000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001') -> 'profiles') profile
   where profile ? 'phone' or profile ? 'email'), 'history profiles do not expose contact information');
+select is(jsonb_array_length(public.get_room_history_snapshot(
+  '20000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001') -> 'profiles'),
+  4, 'current members can see the current member profile directory');
 
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000003';
 set local "request.jwt.claims" = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
@@ -118,6 +128,13 @@ select is((select count(*) from public.get_room_history_sessions('20000000-0000-
   1::bigint, 'former members cannot see sessions created after leaving');
 select is(jsonb_array_length(public.get_room_history_snapshot('20000000-0000-4000-8000-000000000001',
   '30000000-0000-4000-8000-000000000001') -> 'rounds'), 1, 'former members cannot see later rounds');
+select is(jsonb_array_length(public.get_room_history_snapshot(
+  '20000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001') -> 'profiles'),
+  3, 'former members only see profiles visible before leaving');
+select ok(not exists(select 1 from jsonb_array_elements(public.get_room_history_snapshot(
+  '20000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001') -> 'profiles') profile
+  where profile->>'id' = '10000000-0000-4000-8000-000000000005'),
+  'former members cannot see profiles of later joiners');
 select throws_ok($sql$ select public.get_room_history_snapshot('20000000-0000-4000-8000-000000000001',
   '30000000-0000-4000-8000-000000000002') $sql$, 'P0001', 'room_not_found', 'detail enforces the same cutoff');
 

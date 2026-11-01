@@ -75,12 +75,18 @@ void main() {
     expect(inner.lastRequest, isNot(isA<http.AbortableRequest>()));
   });
 
-  test('认证请求响应体长时间无数据也会超时', () async {
+  test('认证请求响应体长时间无数据也会超时并中止底层请求', () async {
     final controller = StreamController<List<int>>();
+    var aborted = false;
     addTearDown(controller.close);
-    final inner = _FakeClient(
-      (_) async => http.StreamedResponse(controller.stream, 200),
-    );
+    final inner = _FakeClient((request) async {
+      final abortable = request as http.Abortable;
+      abortable.abortTrigger!.then((_) {
+        aborted = true;
+        if (!controller.isClosed) controller.close();
+      });
+      return http.StreamedResponse(controller.stream, 200);
+    });
     final client = AuthHttpClient(
       inner,
       timeout: const Duration(milliseconds: 30),
@@ -96,6 +102,32 @@ void main() {
       response.stream.bytesToString(),
       throwsA(isA<http.ClientException>()),
     );
+    await Future<void>.delayed(Duration.zero);
+    expect(aborted, isTrue);
+  });
+
+  test('已有 AbortableRequest 也会被替换为由客户端控制的 abort 请求', () async {
+    final originalAbort = Completer<void>();
+    final hanging = Completer<http.StreamedResponse>();
+    final original = http.AbortableRequest(
+      'GET',
+      Uri.parse('https://example.supabase.co/auth/v1/user'),
+      abortTrigger: originalAbort.future,
+    );
+    final inner = _FakeClient((request) => hanging.future);
+    final client = AuthHttpClient(
+      inner,
+      timeout: const Duration(milliseconds: 20),
+    );
+
+    await expectLater(
+      client.send(original),
+      throwsA(isA<http.ClientException>()),
+    );
+    expect(identical(inner.lastRequest, original), isFalse);
+    expect(inner.lastRequest, isA<http.AbortableRequest>());
+    expect(originalAbort.isCompleted, isFalse);
+    hanging.complete(_ok('late'));
   });
 
   test('认证请求正常返回时保留状态码、响应头与内容', () async {

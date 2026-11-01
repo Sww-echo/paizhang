@@ -1,11 +1,4 @@
 import '../domain/models.dart';
-import '../domain/room_snapshot.dart';
-
-int activeRoundCount(RemoteRoomSnapshot snapshot, GameSession session) {
-  return snapshot.rounds
-      .where((round) => round.sessionId == session.id && !round.isDeleted)
-      .length;
-}
 
 DateTime sessionDate(GameSession session) {
   return session.finishedAt ?? session.startedAt ?? session.createdAt;
@@ -38,34 +31,8 @@ String formatHistoryDate(DateTime value) {
   return '${date.year}-$month-$day $hour:$minute';
 }
 
-Map<String, int> scoreTotalsForSession(
-  Iterable<Round> rounds,
-  String sessionId,
-) {
-  final totals = <String, int>{};
-  for (final round in rounds) {
-    if (round.sessionId != sessionId || round.isDeleted) continue;
-    for (final change in round.changes) {
-      totals.update(
-        change.playerId,
-        (value) => value + change.value,
-        ifAbsent: () => change.value,
-      );
-    }
-  }
-  return totals;
-}
-
-String memberLabel(RoomMember member, Map<String, User> profiles) {
-  return profiles[member.userId]?.nickname ?? '玩家 ${shortId(member.userId)}';
-}
-
 String scoreUnitLabel(ScoringMode mode) {
   return mode == ScoringMode.money ? '金额' : '积分';
-}
-
-int sumChanges(Iterable<ScoreChange> changes) {
-  return changes.fold<int>(0, (sum, change) => sum + change.value);
 }
 
 String profileName(String userId, Map<String, User> profiles) {
@@ -81,3 +48,44 @@ String shortId(String value) {
   if (value.length <= 8) return value;
   return value.substring(0, 8);
 }
+
+/// Upper bound mirrored from the design math (JS `LIMIT`).
+const pzScoreLimit = 2147483647;
+
+/// Parses an optional-sign integer within the allowed range.
+///
+/// Mirrors the proposal's `integer()` helper: a leading `+` is accepted,
+/// the U+2212 minus is normalized, and [positive] requires a value > 0.
+int? pzParseScoreInteger(String raw, {bool positive = false}) {
+  final text = raw.trim().replaceAll('\u2212', '-');
+  if (!RegExp(r'^[+-]?\d+$').hasMatch(text)) return null;
+  final value = int.tryParse(text);
+  if (value == null || value < -2147483648 || value > pzScoreLimit) {
+    return null;
+  }
+  if (positive && value <= 0) return null;
+  return value;
+}
+
+/// Splits [total] into [count] parts, remainder one unit each to the first
+/// members in fixed join order (proposal's `split()`).
+List<int> pzSplitAmount(int total, int count) {
+  if (count <= 0) {
+    throw ArgumentError.value(count, 'count', '必须为正整数');
+  }
+  final sign = total.sign;
+  final absolute = total.abs();
+  final base = absolute ~/ count;
+  final extra = absolute % count;
+  return List.generate(
+    count,
+    (index) => sign * (base + (index < extra ? 1 : 0)),
+  );
+}
+
+/// Field label for the scoring unit: 金额（元） / 积分.
+String pzAmountLabel(ScoringMode mode) =>
+    mode == ScoringMode.money ? '金额（元）' : '积分';
+
+/// Value suffix used after signed numbers: 元 / 分.
+String pzScoreUnit(ScoringMode mode) => mode == ScoringMode.money ? '元' : '分';

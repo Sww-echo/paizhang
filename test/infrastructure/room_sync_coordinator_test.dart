@@ -3,12 +3,52 @@ import 'dart:async';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paizhang/domain/app_error.dart';
+import 'package:paizhang/domain/models.dart';
 import 'package:paizhang/domain/room_snapshot.dart';
 import 'package:paizhang/infrastructure/backend/room_sync_coordinator.dart';
 import 'package:paizhang/infrastructure/local/app_database.dart';
 import 'package:paizhang/infrastructure/local/local_room_cache.dart';
 
 import '../support/fakes.dart';
+
+class _BlockingSnapshotCache extends LocalRoomCache {
+  _BlockingSnapshotCache(super.database, {required super.actorId});
+
+  Completer<void> entered = Completer<void>();
+  Completer<void>? release;
+
+  @override
+  Future<void> saveRoomSnapshot({
+    required Room room,
+    required List<GameSession> sessions,
+    required List<Round> rounds,
+    Map<String, User> profiles = const {},
+    RoomCloseVoteSummary? closeVote,
+    bool Function()? canWrite,
+  }) async {
+    final gate = release;
+    if (gate == null) {
+      return super.saveRoomSnapshot(
+        room: room,
+        sessions: sessions,
+        rounds: rounds,
+        profiles: profiles,
+        closeVote: closeVote,
+        canWrite: canWrite,
+      );
+    }
+    if (!entered.isCompleted) entered.complete();
+    await gate.future;
+    return super.saveRoomSnapshot(
+      room: room,
+      sessions: sessions,
+      rounds: rounds,
+      profiles: profiles,
+      closeVote: closeVote,
+      canWrite: canWrite,
+    );
+  }
+}
 
 void main() {
   test('悬挂快照超时后释放刷新入口，晚响应不能覆盖恢复后的快照', () async {
@@ -61,5 +101,40 @@ void main() {
     final restored = await cache.loadRoomSnapshot('room-1');
     expect(restored!.rounds.single.version, 2);
     expect(restored.rounds.single.changes.first.value, 40);
+  });
+
+  test('停止房间后，正在写入的旧快照会回滚而不覆盖缓存', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    final cache = _BlockingSnapshotCache(database, actorId: ownerId);
+    final repository = FakeRoomRepository(
+      snapshot: fixtureSnapshot(rounds: [fixtureRound(value: 10, version: 1)]),
+    );
+    final coordinator = RoomSyncCoordinator(
+      repository: repository,
+      realtime: FakeRoomEvents(),
+      cache: cache,
+      isCurrent: () => true,
+    );
+    addTearDown(() async {
+      await coordinator.dispose();
+      await database.close();
+    });
+
+    await coordinator.start('room-1');
+    cache.entered = Completer<void>();
+    cache.release = Completer<void>();
+    repository.snapshot = fixtureSnapshot(
+      rounds: [fixtureRound(value: 90, version: 2)],
+    );
+
+    final refresh = coordinator.refresh();
+    await cache.entered.future;
+    await coordinator.stop();
+    cache.release!.complete();
+    await refresh;
+
+    final restored = await cache.loadRoomSnapshot('room-1');
+    expect(restored!.rounds.single.version, 1);
+    expect(restored.rounds.single.changes.first.value, 10);
   });
 }

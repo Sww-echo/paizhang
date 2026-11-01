@@ -1,17 +1,19 @@
 import 'dart:async';
 
-import '../domain/app_error.dart';
-import '../infrastructure/backend/app_error_mapper.dart';
-
 import 'package:flutter/material.dart';
 
 import '../application/app_services.dart';
-import '../domain/models.dart';
+import '../domain/app_error.dart';
 import '../domain/room_snapshot.dart';
-import 'settlement_page.dart';
-import 'room_widgets.dart';
+import '../infrastructure/backend/app_error_mapper.dart';
+import 'design.dart';
 import 'presentation_helpers.dart';
+import 'room_widgets.dart';
+import 'settlement_page.dart';
 
+/// 个人历史：先加载房间摘要，展开后查看牌局，再按需加载明细。
+///
+/// 分页失败保留已加载内容，原位置重试，不清空整个列表。
 class ConnectedHistoryPage extends StatefulWidget {
   const ConnectedHistoryPage({required this.services, super.key});
 
@@ -79,24 +81,36 @@ class _ConnectedHistoryPageState extends State<ConnectedHistoryPage> {
       onRefresh: _refresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
           if (_history.isEmpty && !_loading && _error == null)
-            const Padding(
-              padding: EdgeInsets.all(48),
-              child: Center(child: Text('还没有历史牌局')),
+            const PzBoard(
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(16),
+                  child: PzHint('还没有历史牌局。参与房间并记录回合后，这里会显示摘要。'),
+                ),
+              ],
             ),
-          for (final history in _history)
+          for (final history in _history) ...[
             _HistoryRoomCard(
               key: ValueKey('${history.roomId}:$_generation'),
               services: widget.services,
               history: history,
             ),
-          if (_error != null)
+            const SizedBox(height: 12),
+          ],
+          if (_error != null) ...[
             ErrorCard(message: _error!.message, onRetry: _loadMore),
+            const SizedBox(height: 12),
+          ],
           if (_loading) const Center(child: CircularProgressIndicator()),
           if (_hasMore && !_loading && _error == null)
-            TextButton(onPressed: _loadMore, child: const Text('加载更多房间')),
+            PzButton(
+              label: '加载更多房间',
+              tone: PzButtonTone.ghost,
+              onPressed: _loadMore,
+            ),
         ],
       ),
     ),
@@ -117,6 +131,7 @@ class _HistoryRoomCard extends StatefulWidget {
 
 class _HistoryRoomCardState extends State<_HistoryRoomCard> {
   final List<HistorySessionSummary> _sessions = [];
+  bool _expanded = false;
   bool _loading = false;
   bool _hasMore = true;
   bool _opening = false;
@@ -148,6 +163,11 @@ class _HistoryRoomCardState extends State<_HistoryRoomCard> {
     }
   }
 
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded && _sessions.isEmpty) unawaited(_loadMore());
+  }
+
   Future<void> _open(HistorySessionSummary value) async {
     if (_opening) return;
     setState(() => _opening = true);
@@ -164,6 +184,7 @@ class _HistoryRoomCardState extends State<_HistoryRoomCard> {
             session: snapshot.sessions.single,
             rounds: snapshot.rounds,
             profiles: snapshot.profiles,
+            currentUserId: widget.services.currentUser?.id,
           ),
         ),
       );
@@ -178,133 +199,71 @@ class _HistoryRoomCardState extends State<_HistoryRoomCard> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    elevation: 0,
-    child: ExpansionTile(
-      leading: const CircleAvatar(child: Icon(Icons.groups_rounded)),
-      title: Text(widget.history.name),
-      subtitle: Text(
-        '${widget.history.sessionCount} 场牌局 · ${widget.history.isCurrentMember ? '当前成员' : '已离开/被移除'}',
-      ),
-      onExpansionChanged: (expanded) {
-        if (expanded && _sessions.isEmpty) unawaited(_loadMore());
-      },
-      children: [
-        if (_opening) const LinearProgressIndicator(),
-        for (final value in _sessions)
-          ListTile(
-            title: Text(value.session.name),
-            subtitle: Text(
-              '${value.roundCount} 局有效记录 · ${sessionStatusLabel(value.session.status)}',
-            ),
-            trailing: Text(formatHistoryDate(value.lastActivityAt)),
-            onTap: _opening ? null : () => _open(value),
-          ),
-        if (_error != null)
-          ErrorCard(message: _error!.message, onRetry: _loadMore),
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.all(12),
-            child: CircularProgressIndicator(),
-          ),
-        if (_hasMore && !_loading && _error == null)
-          TextButton(onPressed: _loadMore, child: const Text('加载更多牌局')),
-      ],
-    ),
-  );
-}
-
-class RoomHistoryPage extends StatelessWidget {
-  const RoomHistoryPage({super.key, required this.snapshot});
-
-  final RemoteRoomSnapshot snapshot;
-
-  Future<void> _openSettlement(
-    BuildContext context,
-    GameSession session,
-  ) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SettlementPage(
-          room: snapshot.room,
-          session: session,
-          rounds: snapshot.rounds
-              .where((round) => round.sessionId == session.id)
-              .toList(),
-          profiles: snapshot.profiles,
-        ),
-      ),
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final sessions = [...snapshot.sessions]
-      ..sort((left, right) => sessionDate(right).compareTo(sessionDate(left)));
-    return Scaffold(
-      appBar: AppBar(title: Text('${snapshot.room.name} · 历史')),
-      body: sessions.isEmpty
-          ? const Center(child: Text('还没有历史牌局'))
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-              itemCount: sessions.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final session = sessions[index];
-                final rounds =
-                    snapshot.rounds
-                        .where((round) => round.sessionId == session.id)
-                        .toList()
-                      ..sort(
-                        (left, right) => right.number.compareTo(left.number),
-                      );
-                return Card(
-                  elevation: 0,
-                  child: ExpansionTile(
-                    title: Text(session.name),
-                    subtitle: Text(
-                      '${activeRoundCount(snapshot, session)} 局有效记录 · ${sessionStatusLabel(session.status)}',
-                    ),
-                    trailing: Text(formatHistoryDate(sessionDate(session))),
-                    children: [
-                      if (rounds.isEmpty)
-                        const ListTile(title: Text('还没有回合记录'))
-                      else
-                        for (final round in rounds)
-                          ListTile(
-                            leading: CircleAvatar(
-                              child: Text('${round.number}'),
-                            ),
-                            title: Text(
-                              round.isDeleted
-                                  ? '第 ${round.number} 局（已撤销）'
-                                  : round.changes
-                                        .map(
-                                          (change) =>
-                                              '${profileName(change.playerId, snapshot.profiles)} ${change.value > 0 ? '+' : ''}${change.value}',
-                                        )
-                                        .join('，'),
-                            ),
-                            subtitle: round.note == null || round.note!.isEmpty
-                                ? null
-                                : Text(round.note!),
-                          ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                          child: TextButton.icon(
-                            onPressed: () => _openSettlement(context, session),
-                            icon: const Icon(Icons.emoji_events_rounded),
-                            label: const Text('查看结算'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+    final history = widget.history;
+    return PzBoard(
+      title: history.name,
+      pill: history.isCurrentMember
+          ? null
+          : const PzPill('已离开房间 · 历史只读', tone: PzPillTone.grey),
+      onHeaderTap: _toggle,
+      headerTrailing: Text(
+        _expanded ? '收起' : '展开',
+        style: TextStyle(fontSize: 12, color: PzColors.of(context).muted),
+      ),
+      children: [
+        PzBoardRow(
+          title: '${history.gameType} · ${history.sessionCount} 场牌局',
+          detail: formatHistoryDate(history.lastActivityAt),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: _toggle,
+        ),
+        if (_expanded) ...[
+          if (_opening) const LinearProgressIndicator(minHeight: 2),
+          if (_sessions.isEmpty && !_loading && _error == null)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(13, 11, 13, 11),
+              child: PzHint('还没有牌局记录'),
             ),
+          for (final value in _sessions)
+            PzBoardRow(
+              title: value.session.name,
+              detail:
+                  '${value.roundCount} 局有效记录 · '
+                  '${sessionStatusLabel(value.session.status)}',
+              trailing: Text(
+                formatHistoryDate(value.lastActivityAt),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: PzColors.of(context).muted,
+                ),
+              ),
+              onTap: _opening ? null : () => _open(value),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(13),
+              child: ErrorCard(message: _error!.message, onRetry: _loadMore),
+            ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if (_hasMore && !_loading && _error == null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(13, 8, 13, 11),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: PzButton(
+                  label: '加载更多牌局',
+                  tone: PzButtonTone.ghost,
+                  onPressed: _loadMore,
+                ),
+              ),
+            ),
+        ],
+      ],
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../application/app_services.dart';
 import '../infrastructure/backend/app_error_mapper.dart';
 import '../infrastructure/local/app_database.dart';
+import 'design.dart';
 import 'room_page.dart';
 
 class SyncQueuePage extends StatefulWidget {
@@ -46,7 +47,7 @@ class _SyncQueuePageState extends State<SyncQueuePage> {
   });
 
   Future<void> _discard(SyncQueueEntry entry) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showPzDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('放弃本地修改？'),
@@ -64,7 +65,15 @@ class _SyncQueuePageState extends State<SyncQueuePage> {
       ),
     );
     if (confirmed == true && mounted) {
-      await _run(() => widget.services.queue.discard(entry.operationId));
+      await _run(() async {
+        final controller = widget.services.createRoomController(entry.roomId);
+        try {
+          await controller.start();
+          await controller.discard(entry);
+        } finally {
+          widget.services.releaseRoomController(controller);
+        }
+      });
     }
   }
 
@@ -105,47 +114,50 @@ class _SyncQueuePageState extends State<SyncQueuePage> {
               'update' => '修改',
               _ => '录入',
             };
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$action回合 · $label',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(entry.lastError ?? '网络恢复后自动提交'),
-                    if (dependent) const Text('请先处理本回合前一条修改'),
-                    if (!dependent)
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          TextButton(
-                            onPressed: _busy ? null : () => _openRoom(entry),
-                            child: const Text('打开房间处理'),
-                          ),
-                          if (entry.status != 'conflict')
-                            TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _run(() async {
-                                      await widget.services.queue.retry(
-                                        entry.operationId,
-                                      );
-                                      await widget.services.flushSyncQueue();
-                                    }),
-                              child: const Text('重试'),
-                            ),
-                          TextButton(
-                            onPressed: _busy ? null : () => _discard(entry),
-                            child: const Text('放弃本地修改'),
-                          ),
-                        ],
+            return PzBoard(
+              dividerBetween: false,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$action回合 · $label',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                  ],
+                      Text(entry.lastError ?? '网络恢复后自动提交'),
+                      if (dependent) const Text('请先处理本回合前一条修改'),
+                      if (!dependent)
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton(
+                              onPressed: _busy ? null : () => _openRoom(entry),
+                              child: const Text('打开房间处理'),
+                            ),
+                            if (entry.status != 'conflict')
+                              TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _run(() async {
+                                        await widget.services.queue.retry(
+                                          entry.operationId,
+                                        );
+                                        await widget.services.flushSyncQueue();
+                                      }),
+                                child: const Text('重试'),
+                              ),
+                            TextButton(
+                              onPressed: _busy ? null : () => _discard(entry),
+                              child: const Text('放弃本地修改'),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             );
           },
         );

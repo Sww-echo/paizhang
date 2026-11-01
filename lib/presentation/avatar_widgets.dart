@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'design.dart';
 import 'presentation_helpers.dart';
 
 class AvatarPreset {
@@ -15,12 +16,12 @@ class AvatarPreset {
 }
 
 const avatarPresets = <AvatarPreset>[
-  AvatarPreset(key: 'preset:leaf', emoji: '🍃', color: Color(0xFF2F7D68)),
-  AvatarPreset(key: 'preset:sun', emoji: '☀️', color: Color(0xFFE29B2D)),
-  AvatarPreset(key: 'preset:wave', emoji: '🌊', color: Color(0xFF3B82A0)),
-  AvatarPreset(key: 'preset:star', emoji: '⭐', color: Color(0xFF7B61A8)),
-  AvatarPreset(key: 'preset:fire', emoji: '🔥', color: Color(0xFFD65A43)),
-  AvatarPreset(key: 'preset:moon', emoji: '🌙', color: Color(0xFF44546A)),
+  AvatarPreset(key: 'preset:leaf', emoji: '🍃', color: PzAvatarColors.leaf),
+  AvatarPreset(key: 'preset:sun', emoji: '☀️', color: PzAvatarColors.sun),
+  AvatarPreset(key: 'preset:wave', emoji: '🌊', color: PzAvatarColors.wave),
+  AvatarPreset(key: 'preset:star', emoji: '⭐', color: PzAvatarColors.star),
+  AvatarPreset(key: 'preset:fire', emoji: '🔥', color: PzAvatarColors.fire),
+  AvatarPreset(key: 'preset:moon', emoji: '🌙', color: PzAvatarColors.moon),
 ];
 
 AvatarPreset? _avatarPresetFor(String? key) {
@@ -35,28 +36,34 @@ class AvatarPresetDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('选择预设头像'),
-      content: Wrap(
-        spacing: 16,
-        runSpacing: 16,
-        children: [
-          for (final preset in avatarPresets)
-            InkWell(
-              onTap: () => Navigator.pop(context, preset.key),
-              borderRadius: BorderRadius.circular(36),
-              child: CircleAvatar(
-                radius: 30,
-                backgroundColor: preset.color,
-                child: Text(preset.emoji, style: const TextStyle(fontSize: 25)),
-              ),
-            ),
-        ],
-      ),
+    return PzDialogShell(
+      title: '选择预设头像',
       actions: [
-        TextButton(
+        PzButton(
+          label: '取消',
+          tone: PzButtonTone.secondary,
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+        ),
+      ],
+      children: [
+        Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            for (final preset in avatarPresets)
+              InkWell(
+                onTap: () => Navigator.pop(context, preset.key),
+                borderRadius: BorderRadius.circular(36),
+                child: CircleAvatar(
+                  radius: 30,
+                  backgroundColor: preset.color,
+                  child: Text(
+                    preset.emoji,
+                    style: const TextStyle(fontSize: 25),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );

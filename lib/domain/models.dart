@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 enum ScoringMode { points, money }
 
 enum RoomStatus { waiting, active, finished, archived, dissolved }
@@ -47,8 +49,12 @@ class RoomCloseVoteSummary {
   final DateTime? expiresAt;
   final String? createdBy;
 
+  int get requiredApprovals => (activeMemberCount / 2).ceil();
+
+  int get remainingApprovals => math.max(0, requiredApprovals - approvedCount);
+
   bool get isPassed =>
-      activeMemberCount > 0 && approvedCount * 2 >= activeMemberCount;
+      activeMemberCount > 0 && approvedCount >= requiredApprovals;
 
   RoomCloseVoteSummary copyWith({
     int? activeMemberCount,

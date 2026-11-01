@@ -72,6 +72,7 @@ class SupabaseSyncQueue {
         rounds: snapshot.rounds,
         profiles: snapshot.profiles,
         closeVote: snapshot.closeVote,
+        canWrite: () => queue.isCurrent(actorId, generation),
       );
     } catch (_) {
       // Reconciliation failure must not replace the original write rejection

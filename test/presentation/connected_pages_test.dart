@@ -46,24 +46,28 @@ void main() {
       await tester.pumpAndSettle();
       debugPrint('checkpoint: room ready');
       expect(repository.fetchCount, 1);
-      await tester.ensureVisible(find.text('录入一局'));
+      await tester.ensureVisible(find.text('记一局'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('录入一局'));
+      await tester.tap(find.text('记一局'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).at(0), '12');
-      await tester.enterText(find.byType(TextField).at(1), '-12');
-      await tester.tap(find.text('继续'));
+      await tester.enterText(find.byKey(const ValueKey('full-$ownerId')), '12');
+      await tester.enterText(
+        find.byKey(const ValueKey('full-$memberId')),
+        '-12',
+      );
       await tester.pumpAndSettle();
-      expect(find.text('确认提交'), findsNWidgets(2));
-      await tester.tap(find.widgetWithText(FilledButton, '确认提交'));
+      await tester.tap(find.text('核对'));
+      await tester.pumpAndSettle();
+      expect(find.text('核对本回合'), findsOneWidget);
+      await tester.tap(find.text('确认保存'));
       debugPrint('checkpoint: confirmed');
       await tester.pumpAndSettle();
       debugPrint('checkpoint: confirmed settled');
       // The status panel scrolls with the list; return to the top before
       // asserting it is shown.
-      await tester.drag(find.byType(ListView), const Offset(0, 600));
+      await tester.drag(find.byType(ListView).first, const Offset(0, 600));
       await tester.pumpAndSettle();
-      expect(find.textContaining('条本地修改待同步'), findsOneWidget);
+      expect(find.textContaining('条待同步'), findsOneWidget);
       expect(
         await services.database.pendingOperations(actorId: ownerId),
         hasLength(1),

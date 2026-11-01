@@ -27,10 +27,14 @@ class AuthHttpClient extends http.BaseClient {
   Future<http.StreamedResponse> send(http.BaseRequest request) {
     if (!_isAuthRequest(request.url)) return inner.send(request);
     final abortSignal = Completer<void>();
+    void abort() {
+      if (!abortSignal.isCompleted) abortSignal.complete();
+    }
+
     final abortable = _abortable(request, abortSignal.future);
     final timedOut = Completer<http.StreamedResponse>();
     final timer = Timer(timeout, () {
-      if (!abortSignal.isCompleted) abortSignal.complete();
+      abort();
       if (!timedOut.isCompleted) {
         timedOut.completeError(_timeoutError(request.url, '请求超时'));
       }
@@ -40,18 +44,23 @@ class AuthHttpClient extends http.BaseClient {
     // late response must not leak into the app after the timeout.
     unawaited(pending.then<void>((_) {}, onError: (Object _) {}));
     return Future.any<http.StreamedResponse>([pending, timedOut.future])
-        .then((response) => _bounded(response, request))
+        .then((response) => _bounded(response, request, abort))
         .whenComplete(timer.cancel);
   }
 
   http.StreamedResponse _bounded(
     http.StreamedResponse response,
     http.BaseRequest request,
+    void Function() abort,
   ) {
     return http.StreamedResponse(
       response.stream.timeout(
         timeout,
-        onTimeout: (sink) => sink.addError(_timeoutError(request.url, '响应超时')),
+        onTimeout: (sink) {
+          abort();
+          sink.addError(_timeoutError(request.url, '响应超时'));
+          sink.close();
+        },
       ),
       response.statusCode,
       contentLength: response.contentLength,
@@ -70,7 +79,8 @@ class AuthHttpClient extends http.BaseClient {
     http.BaseRequest request,
     Future<void> abortSignal,
   ) {
-    if (request is http.Abortable) return request;
+    // Rebuild Request, including an existing AbortableRequest, so this client
+    // owns the abort trigger used by its timeout policy.
     if (request is http.Request) {
       return http.AbortableRequest(
           request.method,

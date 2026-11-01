@@ -145,8 +145,8 @@ void main() {
       repository.onLoad = () async => [
         _room('room-1', '恢复后的房间', RoomStatus.active),
       ];
-      await tester.ensureVisible(find.byIcon(Icons.refresh_rounded));
-      await tester.tap(find.byIcon(Icons.refresh_rounded));
+      await tester.ensureVisible(find.text('重试'));
+      await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();
       expect(repository.listCalls, 2);
       expect(find.text('恢复后的房间'), findsOneWidget);
