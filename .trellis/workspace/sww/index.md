@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 27
+- **Total Sessions**: 28
 - **Last Active**: 2026-11-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~886 | Active |
+| `journal-1.md` | ~914 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 28 | 2026-11-01 | 修复 review findings | - | `main` |
 | 27 | 2026-11-01 | 第三批历史可见性修复 | - | `main` |
 | 26 | 2026-11-01 | 两批修复验证完成 | - | `main` |
 | 25 | 2026-11-01 | 第二批状态修复完成 | - | `main` |

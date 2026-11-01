@@ -884,3 +884,31 @@
 ### Next Steps
 
 - 在 Supabase 测试项目运行迁移和 reliability_test.sql；确认历史 profile 产品规则后再决定是否保留该迁移。
+
+
+## Session 28: 修复 review findings
+<!-- trellis-session: v=2 fp=3ef36a57dde9f57f -->
+
+**Date**: 2026-11-01
+**Task**: 修复 review findings
+**Branch**: `main`
+
+### Summary
+
+完成 review 后 7 个问题的修复：同步记录放弃操作改为通过 RoomController discard 并刷新本地快照；整局记分面板支持备注保存、编辑和清空；退出登录统计全部 unresolved 操作；历史和结算的同步状态按当前牌局过滤；回合历史操作增加本地 busy 防重复；关闭投票统一按有效成员半数计算剩余票数；历史编辑前刷新并使用最新房间、成员和 profile 快照。新增备注、投票边界测试。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flutter analyze；flutter test（163 项通过）；python3 -m unittest discover -s tool -p '*_test.py'（7 项通过）；flutter build web --no-pub；git diff --check
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Supabase CLI 当前不可用，后续在真实 Supabase/pgTAP 环境执行 20261101090000_history_profile_visibility.sql 和 reliability_test.sql
