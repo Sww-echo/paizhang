@@ -756,3 +756,35 @@
 ### Next Steps
 
 - 实施第一批：修复认证底层 abort，补房间缓存代际/版本保护，删除草稿传 expectedVersion，并运行相关测试。
+
+
+## Session 24: 第一批可靠性修复完成
+<!-- trellis-session: v=2 fp=c2a0ed67c1829ab1 -->
+
+**Date**: 2026-11-01
+**Task**: 第一批可靠性修复完成
+**Branch**: `main`
+
+### Summary
+
+完成第一批三项修复：AuthHttpClient 响应体超时触发底层 abort，并重建已有 AbortableRequest；RoomSyncCoordinator 将当前代际写入守卫传入 LocalRoomCache，过期事务回滚，SupabaseSyncQueue 对账写入也受账号代际保护；删除草稿牌局传递 session.version 进行服务端冲突校验。新增对应测试。
+
+### Main Changes
+
+- 第一批修复已落地，第二批待处理个人页 _busy 与回合历史同步状态。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 相关测试 9 项通过；flutter analyze 通过；flutter test 全量 161 项通过；dart format 与 Python 7 项测试通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 开始第二批：将 ConnectedProfilePage 的 _busy 改为真实异步状态，并让 RoundHistoryPage 在操作后刷新 pending/conflict 状态。
