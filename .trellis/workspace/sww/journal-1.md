@@ -820,3 +820,35 @@
 ### Next Steps
 
 - 确认第三批历史 profile 可见范围，补真实 Supabase/pgTAP、双客户端并发、Realtime 重连、离线重启和 release 真机验收。
+
+
+## Session 26: 两批修复验证完成
+<!-- trellis-session: v=2 fp=b5a30f3e10fed126 -->
+
+**Date**: 2026-11-01
+**Task**: 两批修复验证完成
+**Branch**: `main`
+
+### Summary
+
+第一、二批修复已验证完成。回合历史刷新现在直接从数据库读取当前账号未解决操作，避免依赖异步 controller listener 的旧状态。第三批仍需产品确认历史成员 profile 可见时间边界，并安排真实 Supabase、双客户端、Realtime、离线重启和真机验收。
+
+### Main Changes
+
+- 当前业务源码未提交；第一、二批修复留在工作树供继续审阅。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 最终验证：flutter test 全量 161 项通过；flutter analyze 通过；flutter build web --no-pub 成功；Python 工具测试 7 项通过；git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 处理第三批：先确认历史 profile 时间边界，再补 SQL/pgTAP 和真实环境验收；确认后决定是否修改历史快照 RPC。
