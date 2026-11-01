@@ -788,3 +788,35 @@
 ### Next Steps
 
 - 开始第二批：将 ConnectedProfilePage 的 _busy 改为真实异步状态，并让 RoundHistoryPage 在操作后刷新 pending/conflict 状态。
+
+
+## Session 25: 第二批状态修复完成
+<!-- trellis-session: v=2 fp=968c90526950dc2e -->
+
+**Date**: 2026-11-01
+**Task**: 第二批状态修复完成
+**Branch**: `main`
+
+### Summary
+
+完成第二批两项修复：ConnectedProfilePage 使用真实可变 busy 状态包住编辑资料和退出登录流程，防止重复操作；RoundHistoryPage 将回合列表与 pending/conflict 同步状态作为同一份 RoundHistoryData 刷新，操作后标签不再保留旧状态。
+
+### Main Changes
+
+- 第一、二批修复已落地；第三批保留历史成员 profile 时间边界确认和真实 Supabase/双客户端测试。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] 第二批相关测试 26 项通过；flutter analyze 通过；dart format 通过。第一批全量 flutter test 161 项也已通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 确认第三批历史 profile 可见范围，补真实 Supabase/pgTAP、双客户端并发、Realtime 重连、离线重启和 release 真机验收。
